@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { View, Platform, AppState } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { WebView } from "react-native-webview";
+import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { buildCloudHtml, CloudRuntimeConfig } from "./cloudCanvasRuntime";
 import {
   CloudColourId,
@@ -20,7 +20,14 @@ import { getCloudColourPreset } from "../../domain/palettes/presets";
 import { getStateColourOverride } from "../../domain/productStates/statePalettes";
 import { STATE_EMOTION_MAP } from "../../domain/productStates/stateEmotionMap";
 import { getEnvironmentById } from "../../domain/environments/presets";
+import {
+  DevLabRuntimeCommand,
+  DevLabTelemetry,
+  ExpressionRecipe,
+  LCDPROTO_SOURCE_SHA,
+} from "../../domain/devlab/types";
 import { useReducedMotion } from "../ui/Kit";
+
 export interface CloudPreviewProps {
   colourId?: CloudColourId;
   palette?: CloudColourConfig;
@@ -36,7 +43,14 @@ export interface CloudPreviewProps {
   environment?: string;
   reactionId?: string;
   reactionToken?: number;
+  runtimeActive?: boolean;
+  runtimeCommand?: DevLabRuntimeCommand | null;
+  commandToken?: number;
+  expressionRecipe?: ExpressionRecipe | null;
+  debugTelemetry?: boolean;
+  onTelemetry?: (telemetry: DevLabTelemetry) => void;
 }
+
 export function CloudPreview({
   colourId = "white",
   palette,
@@ -52,24 +66,33 @@ export function CloudPreview({
   reactionToken,
   behaviourId,
   cloudSettings,
+  runtimeActive = true,
+  runtimeCommand = null,
+  commandToken = 0,
+  expressionRecipe = null,
+  debugTelemetry = false,
+  onTelemetry,
 }: CloudPreviewProps) {
   const native = useRef<WebView>(null);
   const web = useRef<HTMLIFrameElement>(null);
   const [focused, setFocused] = useState(true);
   const [foreground, setForeground] = useState(true);
   const reducedMotion = useReducedMotion();
+
   useFocusEffect(
     useCallback(() => {
       setFocused(true);
       return () => setFocused(false);
     }, []),
   );
+
   useEffect(() => {
     const s = AppState.addEventListener("change", (state) =>
       setForeground(state === "active"),
     );
     return () => s.remove();
   }, []);
+
   const resolved =
     palette ||
     getStateColourOverride(proximityState) ||
@@ -86,6 +109,7 @@ export function CloudPreview({
     emotion === "idle"
       ? STATE_EMOTION_MAP[proximityState].expressionId
       : aliases[emotion] || emotion;
+
   const config: CloudRuntimeConfig = {
     palette: resolved,
     state: proximityState,
@@ -98,30 +122,80 @@ export function CloudPreview({
     interactive,
     screenColour: getEnvironmentById(environment).screenColour,
     displayMode: getEnvironmentById(environment).displayMode,
-    active: focused && foreground,
+    active: focused && foreground && runtimeActive,
     reducedMotion,
     reactionId,
     reactionToken,
+    expressionRecipe,
+    debugTelemetry,
+    lcdprotoSourceSha: LCDPROTO_SOURCE_SHA,
   };
+
   const latest = useRef(config);
   useEffect(() => {
     latest.current = config;
   });
+
   const [html] = useState(() => buildCloudHtml(config));
   const source = useMemo(() => ({ html }), [html]);
-  const send = useCallback(() => {
+
+  const sendConfig = useCallback(() => {
     const value = latest.current;
-    if (Platform.OS === "web")
+    if (Platform.OS === "web") {
       web.current?.contentWindow?.postMessage(value, "*");
-    else
+    } else {
       native.current?.injectJavaScript(
         `window.updateCloudProps && window.updateCloudProps(${JSON.stringify(value)});true;`,
       );
+    }
   }, []);
-  const signature = JSON.stringify(config);
-  useEffect(() => send(), [signature, send]);
-  const inner = size - 18;
 
+  const sendCommand = useCallback((command: DevLabRuntimeCommand) => {
+    if (Platform.OS === "web") {
+      web.current?.contentWindow?.postMessage(command, "*");
+    } else {
+      native.current?.injectJavaScript(
+        `window.handleDevLabCommand && window.handleDevLabCommand(${JSON.stringify(command)});true;`,
+      );
+    }
+  }, []);
+
+  const signature = JSON.stringify(config);
+  useEffect(() => sendConfig(), [signature, sendConfig]);
+  useEffect(() => {
+    if (runtimeCommand) sendCommand(runtimeCommand);
+  }, [runtimeCommand, commandToken, sendCommand]);
+
+  const handleTelemetry = useCallback(
+    (data: unknown) => {
+      if (!onTelemetry || !data || typeof data !== "object") return;
+      const message = data as { type?: string; payload?: DevLabTelemetry };
+      if (message.type === "lcdprotoTelemetry" && message.payload) {
+        onTelemetry(message.payload);
+      }
+    },
+    [onTelemetry],
+  );
+
+  const onNativeMessage = useCallback(
+    (event: WebViewMessageEvent) => {
+      try {
+        handleTelemetry(JSON.parse(event.nativeEvent.data));
+      } catch {
+        // Runtime only emits JSON telemetry through this channel.
+      }
+    },
+    [handleTelemetry],
+  );
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const handler = (event: MessageEvent) => handleTelemetry(event.data);
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [handleTelemetry]);
+
+  const inner = size - 18;
   return (
     <View
       accessibilityLabel="Your CHERRIPI display"
@@ -150,7 +224,7 @@ export function CloudPreview({
             ref: web,
             srcDoc: html,
             title: "Live Cherri",
-            onLoad: send,
+            onLoad: sendConfig,
             style: {
               border: 0,
               width: "100%",
@@ -165,7 +239,8 @@ export function CloudPreview({
           <WebView
             ref={native}
             source={source}
-            onLoadEnd={send}
+            onLoadEnd={sendConfig}
+            onMessage={onNativeMessage}
             originWhitelist={["*"]}
             onShouldStartLoadWithRequest={(r) =>
               r.url.startsWith("about:blank") || r.url.startsWith("data:")
