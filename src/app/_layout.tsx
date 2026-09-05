@@ -47,10 +47,11 @@ function RootNavigation() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="onboarding"
-          options={{
-            headerShown: false,
-            animation: "fade",
-          }}
+          options={{ headerShown: false, animation: "fade" }}
+        />
+        <Stack.Screen
+          name="dev-lab"
+          options={{ headerShown: false, animation: "slide_from_right" }}
         />
         <Stack.Screen
           name="simulator"
@@ -60,9 +61,7 @@ function RootNavigation() {
             title: "Proximity Simulator",
             headerBackTitle: "Close",
             headerTintColor: c.text,
-            headerTitleStyle: {
-              fontWeight: "700",
-            },
+            headerTitleStyle: { fontWeight: "700" },
           }}
         />
         <Stack.Screen
@@ -73,9 +72,7 @@ function RootNavigation() {
             title: "Add Driver",
             headerBackTitle: "Cancel",
             headerTintColor: c.text,
-            headerTitleStyle: {
-              fontWeight: "700",
-            },
+            headerTitleStyle: { fontWeight: "700" },
           }}
         />
       </Stack>
