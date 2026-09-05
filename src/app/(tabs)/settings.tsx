@@ -18,7 +18,7 @@ import {
   layout,
 } from "../../components/ui/Kit";
 import { PrivacyMode, SleepMode } from "../../types";
-import { CharacterStudioModal } from "../../components/character/CharacterStudioModal";
+
 function Toggle({
   label,
   value,
@@ -46,6 +46,7 @@ function Toggle({
     </View>
   );
 }
+
 export default function SettingsScreen() {
   const {
     profile,
@@ -60,9 +61,9 @@ export default function SettingsScreen() {
   const c = useTheme();
   const router = useRouter();
   const [developer, setDeveloper] = useState(false);
-  const [studioVisible, setStudioVisible] = useState(false);
   const [error, setError] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
+
   const pick = async () => {
     try {
       const r = await ImagePicker.launchImageLibraryAsync({
@@ -80,6 +81,7 @@ export default function SettingsScreen() {
       setError("Could not open photos. Try again.");
     }
   };
+
   return (
     <Screen>
       <Heading title="Settings" />
@@ -102,6 +104,7 @@ export default function SettingsScreen() {
           onChangeText={(carName) => updateProfile({ carName })}
         />
       </Section>
+
       <Section title="Your device">
         <Surface>
           <View style={layout.between}>
@@ -128,6 +131,7 @@ export default function SettingsScreen() {
           </Copy>
         </Surface>
       </Section>
+
       <Section title="Sleep">
         <Surface>
           {(
@@ -151,6 +155,7 @@ export default function SettingsScreen() {
           ))}
         </Surface>
       </Section>
+
       <Section title="App feel">
         <Surface>
           <Toggle
@@ -191,6 +196,7 @@ export default function SettingsScreen() {
           </View>
         </Surface>
       </Section>
+
       <Section title="Notifications">
         <Surface>
           {(
@@ -217,6 +223,7 @@ export default function SettingsScreen() {
           </Copy>
         </Surface>
       </Section>
+
       <Section title="Privacy">
         <Surface>
           {(
@@ -264,21 +271,28 @@ export default function SettingsScreen() {
           </Surface>
         )}
       </Section>
-      <Section title="Developer & Character Lab">
+
+      <Section title="Developer">
         <Surface>
           <View style={layout.between}>
-            <View style={{ gap: 2, flex: 1 }}>
-              <Copy weight="600">Character Studio & Lab</Copy>
+            <View style={{ gap: 2, flex: 1, paddingRight: 14 }}>
+              <Copy weight="600">LCDPROTO Dev Lab</Copy>
               <Copy muted size={12}>
-                All 30+ physical sliders & volumetric lobe controls
+                Live Cloud, physics, face, expressions, states and telemetry
               </Copy>
             </View>
-            <Tap label="Open Character Studio" onPress={() => setStudioVisible(true)}>
-              <Copy style={{ color: c.accent, fontWeight: "700" }}>Open Lab</Copy>
+            <Tap
+              label="Open Dev Lab"
+              onPress={() => router.push("/dev-lab")}
+            >
+              <Copy style={{ color: c.accent, fontWeight: "700" }}>
+                Open Dev Lab
+              </Copy>
             </Tap>
           </View>
         </Surface>
       </Section>
+
       <Tap label="Developer section" onPress={() => setDeveloper(!developer)}>
         <Copy muted>Advanced options {developer ? "↑" : "↓"}</Copy>
       </Tap>
@@ -298,13 +312,10 @@ export default function SettingsScreen() {
           </Copy>
         </Surface>
       )}
+
       <Copy muted size={12} style={{ textAlign: "center" }}>
         CHERRIPI · 1.1
       </Copy>
-      <CharacterStudioModal
-        visible={studioVisible}
-        onClose={() => setStudioVisible(false)}
-      />
     </Screen>
   );
 }
