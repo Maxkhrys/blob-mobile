@@ -18,7 +18,19 @@ const modules = Object.keys(manifest.files)
     return `${JSON.stringify(file)}:function(require,module,exports){\n${code}\n}`;
   })
   .join(",\n");
-const bundle = `var LCD=(function(){var modules={${modules}},cache={};function load(id){if(cache[id])return cache[id].exports;var m=cache[id]={exports:{}};modules[id](function(p){var q=p.startsWith('@/')?p.slice(2):id.slice(0,id.lastIndexOf('/')+1)+p;var a=[];q.split('/').forEach(x=>{if(x==='..')a.pop();else if(x!=='.')a.push(x)});q=a.join('/');return load(q.endsWith('.ts')?q:q+'.ts')},m,m.exports);return m.exports;}return Object.assign({},${["components/experimental/cloud-blob/cloudRenderer.ts", "components/experimental/cloud-blob/cloudLobeSystem.ts", "lib/expressions/coreExpressions.ts", "lib/expressions/types.ts", "lib/performances/corePerformances.ts", "lib/performances/performanceRunner.ts", "lib/stateEmotionMap.ts"].map((p) => `load(${JSON.stringify(p)})`).join(",")});})();`;
+const bundle = `var LCD=(function(){var modules={${modules}},cache={};function load(id){var key=modules[id]?id:(modules[id+'.ts']?id+'.ts':(modules[id+'/index.ts']?id+'/index.ts':id));if(cache[key])return cache[key].exports;var m=cache[key]={exports:{}};modules[key](function(p){var q=p.startsWith('@/')?p.slice(2):key.slice(0,key.lastIndexOf('/')+1)+p;var a=[];q.split('/').forEach(x=>{if(x==='..')a.pop();else if(x!=='.')a.push(x)});q=a.join('/');var r=modules[q]?q:(modules[q+'.ts']?q+'.ts':(modules[q+'/index.ts']?q+'/index.ts':q+'.ts'));return load(r);},m,m.exports);return m.exports;}return Object.assign({},${[
+  "components/experimental/cloud-blob/cloudRenderer.ts",
+  "components/experimental/cloud-blob/cloudLobeSystem.ts",
+  "components/experimental/cloud-blob/cloudPerformance.ts",
+  "lib/expressionCatalog.ts",
+  "lib/characters.ts",
+  "lib/blobCalibration.ts",
+  "lib/expressions/coreExpressions.ts",
+  "lib/expressions/types.ts",
+  "lib/performances/corePerformances.ts",
+  "lib/performances/performanceRunner.ts",
+  "lib/stateEmotionMap.ts"
+].map((p) => `load(${JSON.stringify(p)})`).join(",")});})();`;
 fs.writeFileSync(
   path.resolve(
     __dirname,

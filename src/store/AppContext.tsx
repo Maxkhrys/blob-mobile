@@ -27,6 +27,11 @@ import { MockFriendsService } from "../services/friends/MockFriendsService";
 import { MockEncountersService } from "../services/encounters/MockEncountersService";
 import { MockProximityService } from "../services/proximity/MockProximityService";
 
+import {
+  CloudSettingsValues,
+  getDefaultCloudSettings,
+} from "../domain/character/cloudSliders";
+
 interface AppContextType {
   isReady: boolean;
   profile: UserProfile;
@@ -68,6 +73,13 @@ interface AppContextType {
 
   cloudEmotion: CloudEmotion;
   triggerEmotion: (emotion: CloudEmotion) => void;
+
+  activeBehaviourId: string | null;
+  triggerBehaviour: (id: string) => void;
+
+  cloudSettings: CloudSettingsValues;
+  updateCloudSettings: (patch: Partial<CloudSettingsValues>) => void;
+  resetCloudSettings: () => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -91,6 +103,8 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({
     timestamp: 0,
   }));
   const [cloudEmotion, setCloudEmotion] = useState<CloudEmotion>("idle");
+  const [activeBehaviourId, setActiveBehaviourId] = useState<string | null>(null);
+  const [cloudSettings, setCloudSettings] = useState<CloudSettingsValues>(getDefaultCloudSettings);
 
   // Initialize and hydrate from storage
   useEffect(() => {
@@ -329,6 +343,38 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({
     emotionTimer.current = setTimeout(() => setCloudEmotion("idle"), 3000);
   }, []);
 
+  const behaviourTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (behaviourTimer.current) clearTimeout(behaviourTimer.current);
+    },
+    [],
+  );
+  const triggerBehaviour = useCallback((id: string) => {
+    if (behaviourTimer.current) clearTimeout(behaviourTimer.current);
+    setActiveBehaviourId(id);
+    behaviourTimer.current = setTimeout(() => setActiveBehaviourId(null), 3000);
+  }, []);
+
+  const updateCloudSettings = useCallback(
+    (patch: Partial<CloudSettingsValues>) => {
+      setCloudSettings((prev) => ({
+        ...prev,
+        ...patch,
+        params: { ...prev.params, ...(patch.params || {}) },
+        motion: { ...prev.motion, ...(patch.motion || {}) },
+        trails: { ...prev.trails, ...(patch.trails || {}) },
+        colour: { ...prev.colour, ...(patch.colour || {}) },
+        face: { ...prev.face, ...(patch.face || {}) },
+      }));
+    },
+    [],
+  );
+
+  const resetCloudSettings = useCallback(() => {
+    setCloudSettings(getDefaultCloudSettings());
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -354,6 +400,11 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({
         clearEncounters,
         cloudEmotion,
         triggerEmotion,
+        activeBehaviourId,
+        triggerBehaviour,
+        cloudSettings,
+        updateCloudSettings,
+        resetCloudSettings,
       }}
     >
       {children}

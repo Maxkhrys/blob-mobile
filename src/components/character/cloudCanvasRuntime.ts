@@ -21,6 +21,7 @@ export interface CloudRuntimeConfig {
   reducedMotion?: boolean;
   reactionId?: string;
   reactionToken?: number;
+  behaviourId?: string;
   state?: string;
   emotionId?: string;
   driverYaw?: number;
@@ -28,6 +29,7 @@ export interface CloudRuntimeConfig {
   showPupils?: boolean;
   size?: number;
   interactive?: boolean;
+  cloudSettings?: any;
 }
 
 export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
@@ -161,6 +163,7 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
 
     var currentRig = LCD.recipeToBlobRig(LCD.getCoreExpression('NEUTRAL'));
     var targetRig = JSON.parse(JSON.stringify(currentRig));
+    var performance = (LCD.CloudPerformance && typeof LCD.CloudPerformance === 'function') ? new LCD.CloudPerformance() : null;
     var reactionStarted = 0, reactionClip = null, reactionExpression = null;
     var reactionDuration = 0;
     var bodyPose = Object.assign({}, LCD.DEFAULT_BODY_POSE);
@@ -196,16 +199,21 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       var resolvedId = aliases[id] || id;
       if(resolvedId === lastExpressionId) return;
       lastExpressionId = resolvedId;
-      targetRig = LCD.recipeToBlobRig(LCD.getCoreExpression(resolvedId));
+      var recipe = LCD.getCoreExpression ? LCD.getCoreExpression(resolvedId) : null;
+      if (recipe) targetRig = LCD.recipeToBlobRig(recipe);
     }
     function beginReaction(id) {
-      reactionClip = LCD.CORE_PERFORMANCES.find(function(c){return c.id===id}) || null;
+      reactionClip = (LCD.CORE_PERFORMANCES && LCD.CORE_PERFORMANCES.find(function(c){return c.id===id})) || null;
       reactionExpression = reactionClip ? reactionClip.defaultExpressionId : id;
       reactionStarted = idleTime;
-      reactionDuration = reactionClip ? reactionClip.durationMs + 450 : 1800;
+      reactionDuration = reactionClip ? reactionClip.durationMs + 450 : 2400;
+      if (performance && typeof performance.trigger === 'function') {
+        try { performance.trigger(id); } catch(e) {}
+      }
     }
     applyEmotionToTarget(initialConfig.emotionId || 'NEUTRAL');
     if(initialConfig.reactionId) beginReaction(initialConfig.reactionId);
+    if(initialConfig.behaviourId) beginReaction(initialConfig.behaviourId);
 
     // Blend rig towards target rig
     function blendRig(current, target, rate) {
@@ -233,15 +241,35 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
 
       var elapsed = (idleTime - reactionStarted) * 1000;
       bodyPose = {};
+      var perfRig = null;
+      if (performance) {
+        try { perfRig = performance.update(step * 1000, true); } catch(e) {}
+      }
       if (reactionExpression && elapsed <= reactionDuration) {
-        if(reactionClip) {
+        if (perfRig) {
+          targetRig = perfRig;
+          if (perfRig.body) {
+            bodyPose = {
+              x: perfRig.blob ? perfRig.blob.x : 0,
+              y: perfRig.blob ? perfRig.blob.y : 0,
+              scaleX: perfRig.body ? perfRig.body.scaleX - 1 : 0,
+              scaleY: perfRig.body ? perfRig.body.scaleY - 1 : 0,
+            };
+          }
+        } else if(reactionClip) {
           var sample = LCD.sampleClipAt(reactionClip, elapsed);
           bodyPose = initialConfig.reducedMotion ? {} : sample.body;
           applyEmotionToTarget(sample.activeExpressionId);
-        } else applyEmotionToTarget(reactionExpression);
+        } else {
+          applyEmotionToTarget(reactionExpression);
+        }
       } else {
         reactionExpression = null;
-        applyEmotionToTarget(initialConfig.emotionId || 'NEUTRAL');
+        if (perfRig && (!initialConfig.emotionId || initialConfig.emotionId === 'idle' || initialConfig.emotionId === 'NEUTRAL')) {
+          targetRig = perfRig;
+        } else {
+          applyEmotionToTarget(initialConfig.emotionId || 'NEUTRAL');
+        }
       }
       // Blend current facial rig
       blendRig(currentRig, targetRig, 1 - Math.exp(-9 * step));
@@ -472,9 +500,22 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       if (props.reactionToken !== undefined && props.reactionToken !== initialConfig.reactionToken) {
         initialConfig.reactionToken = props.reactionToken;
         if(props.reactionId) beginReaction(props.reactionId);
+        if(props.behaviourId) beginReaction(props.behaviourId);
+      } else if (props.behaviourId) {
+        beginReaction(props.behaviourId);
       }
       if (props.palette) {
         currentPalette = Object.assign({}, currentPalette, props.palette);
+      }
+      if (props.cloudSettings) {
+        if (props.cloudSettings.params) Object.assign(currentParams, props.cloudSettings.params);
+        if (props.cloudSettings.motion) Object.assign(motionConfig, props.cloudSettings.motion);
+        if (props.cloudSettings.colour) {
+          var col = props.cloudSettings.colour;
+          if (col.glowIntensity !== undefined) currentPalette.glowIntensity = col.glowIntensity;
+          if (col.density !== undefined) currentPalette.density = col.density;
+          if (col.translucency !== undefined) currentPalette.translucency = col.translucency;
+        }
       }
       if(props.state && props.state !== initialConfig.state) {
         initialConfig.state=props.state;
@@ -502,19 +543,30 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
 
     document.addEventListener('visibilitychange', function(){if(!document.hidden && frame===null && initialConfig.active!==false) frame=requestAnimationFrame(tick);});
     window.addEventListener('pagehide', function(){ cancelAnimationFrame(frame); });
-    // React Native message event listener
-    window.addEventListener("message", function(event) {
+
+    function handleBridgeMessage(event) {
       try {
         var data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (!data) return;
+        if (data.type === "dragStart" || data.type === "dragMove") {
+          dragActive = true;
+          isTouching = true;
+          dragTargetX = clamp(data.x, -140, 140);
+          dragTargetY = clamp(data.y, -140, 140);
+          return;
+        }
+        if (data.type === "dragEnd") {
+          dragActive = false;
+          isTouching = false;
+          dragTargetX = 0;
+          dragTargetY = 0;
+          return;
+        }
         window.updateCloudProps(data);
       } catch (e) {}
-    });
-    document.addEventListener("message", function(event) {
-      try {
-        var data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-        window.updateCloudProps(data);
-      } catch (e) {}
-    });
+    }
+    window.addEventListener("message", handleBridgeMessage);
+    document.addEventListener("message", handleBridgeMessage);
 
   })();
   </script>

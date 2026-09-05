@@ -31,9 +31,11 @@ export function useReducedMotion() {
 export function Screen({
   children,
   header,
+  scrollable = true,
 }: {
   children: React.ReactNode;
   header?: React.ReactNode;
+  scrollable?: boolean;
 }) {
   const c = useTheme();
   return (
@@ -55,20 +57,36 @@ export function Screen({
           {header}
         </View>
       )}
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          padding: 24,
-          paddingBottom: 36,
-          gap: 24,
-          width: "100%",
-          maxWidth: 540,
-          alignSelf: "center",
-        }}
-      >
-        {children}
-      </ScrollView>
+      {scrollable ? (
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            padding: 24,
+            paddingBottom: 36,
+            gap: 24,
+            width: "100%",
+            maxWidth: 540,
+            alignSelf: "center",
+          }}
+        >
+          {children}
+        </ScrollView>
+      ) : (
+        <View
+          style={{
+            flex: 1,
+            paddingHorizontal: 20,
+            paddingVertical: 12,
+            width: "100%",
+            maxWidth: 540,
+            alignSelf: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          {children}
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -77,17 +95,20 @@ export function Copy({
   size = 15,
   muted = false,
   weight = "400",
+  numberOfLines,
   style,
 }: {
   children: React.ReactNode;
   size?: number;
   muted?: boolean;
-  weight?: "400" | "500" | "600" | "700";
+  weight?: "400" | "500" | "600" | "700" | "800";
+  numberOfLines?: number;
   style?: object;
 }) {
   const c = useTheme();
   return (
     <Text
+      numberOfLines={numberOfLines}
       style={{
         fontSize: size,
         lineHeight: size * 1.4,

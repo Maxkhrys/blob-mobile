@@ -5,7 +5,7 @@ import React, {
   useCallback,
   useState,
 } from "react";
-import { View, Platform, AppState } from "react-native";
+import { View, Platform, AppState, StyleSheet } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { WebView } from "react-native-webview";
 import { buildCloudHtml, CloudRuntimeConfig } from "./cloudCanvasRuntime";
@@ -25,6 +25,8 @@ export interface CloudPreviewProps {
   colourId?: CloudColourId;
   palette?: CloudColourConfig;
   emotion?: CloudEmotion | BehaviourId;
+  behaviourId?: string;
+  cloudSettings?: any;
   proximityState?: ProximityState;
   driverYaw?: number;
   driverPitch?: number;
@@ -48,6 +50,8 @@ export function CloudPreview({
   environment = "dark",
   reactionId,
   reactionToken,
+  behaviourId,
+  cloudSettings,
 }: CloudPreviewProps) {
   const native = useRef<WebView>(null);
   const web = useRef<HTMLIFrameElement>(null);
@@ -86,6 +90,8 @@ export function CloudPreview({
     palette: resolved,
     state: proximityState,
     emotionId,
+    behaviourId,
+    cloudSettings,
     driverYaw,
     driverPitch,
     showPupils,
@@ -103,6 +109,14 @@ export function CloudPreview({
   });
   const [html] = useState(() => buildCloudHtml(config));
   const source = useMemo(() => ({ html }), [html]);
+  const postToBridge = useCallback((data: any) => {
+    if (Platform.OS === "web")
+      web.current?.contentWindow?.postMessage(data, "*");
+    else
+      native.current?.injectJavaScript(
+        `window.handleBridgeMessage && window.handleBridgeMessage({ data: ${JSON.stringify(data)} });true;`,
+      );
+  }, []);
   const send = useCallback(() => {
     const value = latest.current;
     if (Platform.OS === "web")
@@ -115,6 +129,9 @@ export function CloudPreview({
   const signature = JSON.stringify(config);
   useEffect(() => send(), [signature, send]);
   const inner = size - 18;
+
+  const dragOrigin = useRef({ x: 0, y: 0 });
+
   return (
     <View
       accessibilityLabel="Your CHERRIPI display"
@@ -170,6 +187,38 @@ export function CloudPreview({
             bounces={false}
             javaScriptEnabled
             androidLayerType="hardware"
+          />
+        )}
+        {interactive && (
+          <View
+            style={StyleSheet.absoluteFill}
+            onStartShouldSetResponder={() => true}
+            onStartShouldSetResponderCapture={() => true}
+            onMoveShouldSetResponder={() => true}
+            onMoveShouldSetResponderCapture={() => true}
+            onResponderGrant={(e) => {
+              dragOrigin.current = {
+                x: e.nativeEvent.pageX,
+                y: e.nativeEvent.pageY,
+              };
+              postToBridge({ type: "dragStart", x: 0, y: 0 });
+            }}
+            onResponderMove={(e) => {
+              const dx = e.nativeEvent.pageX - dragOrigin.current.x;
+              const dy = e.nativeEvent.pageY - dragOrigin.current.y;
+              const currentInner = inner || 200;
+              postToBridge({
+                type: "dragMove",
+                x: (dx / currentInner) * 260,
+                y: (dy / currentInner) * 260,
+              });
+            }}
+            onResponderRelease={() => {
+              postToBridge({ type: "dragEnd" });
+            }}
+            onResponderTerminate={() => {
+              postToBridge({ type: "dragEnd" });
+            }}
           />
         )}
       </View>

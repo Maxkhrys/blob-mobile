@@ -26,6 +26,10 @@
     "components/experimental/cloud-blob/cloudLobeSystem.ts": "5e8d71a4440d1c90ad46cb88973ff237665c43513268cfc139aec0a1a3edc994",
     "components/experimental/cloud-blob/cloudRenderer.ts": "cf845b08dfe2873fd6fcdbebd9b838bedddaeabfeee2bd1ab2e15bb242098e36",
     "components/blob/faceRenderer.ts": "d0628ffa8a0742bc6ab8c99a3e1dce5a8bac8817362ff4bb1a0d1ed030e99335",
-    "components/states/EnvironmentLayer.tsx": "154fa4e95cefc7dfac35e9cd5063499002fca6a6840d6ca846a7b4a9f19eaf3d"
+    "components/states/EnvironmentLayer.tsx": "154fa4e95cefc7dfac35e9cd5063499002fca6a6840d6ca846a7b4a9f19eaf3d",
+    "lib/expressionCatalog.ts": "d9eda3eb8c338bb810abc254865a00228f563654cca3f71c1e078975103829f1",
+    "lib/blobPhysics.ts": "d7b6c6e5f3519e49bcded1890705f94d58cd9841b34ebdf7f82653f6da5afbc6",
+    "lib/blobDrag.ts": "9673ed46939bc054363e41fd7d7a8b9f732ff2a6a5200421152942e0e54d80e4",
+    "components/experimental/cloud-blob/cloudPerformance.ts": "bdffd5c07894e27ad82f951b00f84e19e831d9b6711b2c0c08ca325f05d5ef52"
   }
 }

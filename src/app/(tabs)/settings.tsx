@@ -18,6 +18,7 @@ import {
   layout,
 } from "../../components/ui/Kit";
 import { PrivacyMode, SleepMode } from "../../types";
+import { CharacterStudioModal } from "../../components/character/CharacterStudioModal";
 function Toggle({
   label,
   value,
@@ -59,6 +60,7 @@ export default function SettingsScreen() {
   const c = useTheme();
   const router = useRouter();
   const [developer, setDeveloper] = useState(false);
+  const [studioVisible, setStudioVisible] = useState(false);
   const [error, setError] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
   const pick = async () => {
@@ -262,8 +264,23 @@ export default function SettingsScreen() {
           </Surface>
         )}
       </Section>
+      <Section title="Developer & Character Lab">
+        <Surface>
+          <View style={layout.between}>
+            <View style={{ gap: 2, flex: 1 }}>
+              <Copy weight="600">Character Studio & Lab</Copy>
+              <Copy muted size={12}>
+                All 30+ physical sliders & volumetric lobe controls
+              </Copy>
+            </View>
+            <Tap label="Open Character Studio" onPress={() => setStudioVisible(true)}>
+              <Copy style={{ color: c.accent, fontWeight: "700" }}>Open Lab</Copy>
+            </Tap>
+          </View>
+        </Surface>
+      </Section>
       <Tap label="Developer section" onPress={() => setDeveloper(!developer)}>
-        <Copy muted>Developer {developer ? "↑" : "↓"}</Copy>
+        <Copy muted>Advanced options {developer ? "↑" : "↓"}</Copy>
       </Tap>
       {developer && (
         <Surface>
@@ -282,8 +299,12 @@ export default function SettingsScreen() {
         </Surface>
       )}
       <Copy muted size={12} style={{ textAlign: "center" }}>
-        CHERRIPI · 1.0
+        CHERRIPI · 1.1
       </Copy>
+      <CharacterStudioModal
+        visible={studioVisible}
+        onClose={() => setStudioVisible(false)}
+      />
     </Screen>
   );
 }
