@@ -1,6 +1,9 @@
 import type { CloudSettingsValues } from "../character/cloudSliders";
 
+export const LCDPROTO_SOURCE_BRANCH = "feat/cloud-menu-ui-accents" as const;
 export const LCDPROTO_SOURCE_SHA =
+  "95dafb92b5ba87683294698bb7ea89729fd148d4" as const;
+export const LCDPROTO_MAIN_REFERENCE_SHA =
   "bd2460fbc78c1d1e6dfe9cac4b362ddd887df6c3" as const;
 
 export type DevLabSection =
