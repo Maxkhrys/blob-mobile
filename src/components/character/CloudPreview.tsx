@@ -28,6 +28,17 @@ import {
 } from "../../domain/devlab/types";
 import { useReducedMotion } from "../ui/Kit";
 
+const CORE_PERFORMANCE_IDS = new Set([
+  "JOY_HOP",
+  "LAUGH_SQUISH",
+  "EXCITED_WIGGLE",
+  "CURIOUS_DOUBLE_TAKE",
+  "ANGRY_FLARE",
+  "SURPRISE_POP",
+  "SLEEPY_YAWN",
+  "SAD_SETTLE",
+]);
+
 export interface CloudPreviewProps {
   colourId?: CloudColourId;
   palette?: CloudColourConfig;
@@ -151,11 +162,15 @@ export function CloudPreview({
   }, []);
 
   const sendCommand = useCallback((command: DevLabRuntimeCommand) => {
+    const value: DevLabRuntimeCommand =
+      command.type === "triggerBehaviour" && CORE_PERFORMANCE_IDS.has(command.id)
+        ? { type: "triggerPerformance", id: command.id }
+        : command;
     if (Platform.OS === "web") {
-      web.current?.contentWindow?.postMessage(command, "*");
+      web.current?.contentWindow?.postMessage(value, "*");
     } else {
       native.current?.injectJavaScript(
-        `window.handleDevLabCommand && window.handleDevLabCommand(${JSON.stringify(command)});true;`,
+        `window.handleDevLabCommand && window.handleDevLabCommand(${JSON.stringify(value)});true;`,
       );
     }
   }, []);
