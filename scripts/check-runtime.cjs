@@ -60,6 +60,11 @@ const canvas = () => ({
   style: {},
   getContext: () => context,
   getBoundingClientRect: () => ({ left: 0, top: 0, width: 466, height: 466 }),
+  addEventListener: (k, f) => {
+    events[k] = f;
+  },
+  setPointerCapture: () => {},
+  releasePointerCapture: () => {},
 });
 const window = {
   devicePixelRatio: 1,

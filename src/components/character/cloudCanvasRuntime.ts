@@ -1,16 +1,5 @@
 import { canonicalScene } from "./canonicalScene.generated";
 import { canonicalRuntime } from "./canonicalRuntime.generated";
-/**
- * Canonical Cloud Character HTML5 Canvas Runtime
- * Synchronized with LCDPROTO:
- * - components/experimental/cloud-blob/cloudRenderer.ts
- * - components/experimental/cloud-blob/cloudLobeSystem.ts
- * - components/experimental/cloud-blob/cloudMistTrails.ts
- * - components/blob/CloudCharacter.tsx
- * - components/blob/faceRenderer.ts
- * - lib/blobRig.ts
- */
-
 import { CloudColourConfig } from "../../domain/character/types";
 
 export interface CloudRuntimeConfig {
@@ -48,6 +37,7 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       -webkit-touch-callout: none;
       -webkit-user-select: none;
       user-select: none;
+      touch-action: none;
     }
     html, body {
       width: 100%;
@@ -57,11 +47,16 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       display: flex;
       align-items: center;
       justify-content: center;
+      touch-action: none;
     }
     canvas {
       display: block;
       background: transparent;
       touch-action: none;
+      cursor: grab;
+    }
+    canvas:active {
+      cursor: grabbing;
     }
   </style>
 </head>
@@ -73,10 +68,8 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
     ${canonicalScene}
     var initialConfig = ${initialJson};
 
-    function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
-    var renderCloudBlob = LCD.renderCloudBlob;
-    var createLobeStates = LCD.createLobeStates;
-    var stepLobePhysics = LCD.stepLobePhysics;
+    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
     function createWispPool(count) {
       var pool = [];
       for (var i = 0; i < count; i++) {
@@ -139,370 +132,403 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       return active;
     }
 
-    // --- SIMULATION LOOP & RIG BLENDING ---
+    // --- CANVAS SETUP ---
     var canvas = document.getElementById("cloudCanvas");
     var ctx = canvas.getContext("2d");
-
-    var size = 466; // native LCDPROTO 466 space
-    var dpr = 1; // Match physical 466 x 466 display; avoid 9x overdraw.
-    canvas.width = size * dpr;
-    canvas.height = size * dpr;
+    var size = 466; // native physical 466 x 466 display space
+    canvas.width = size;
+    canvas.height = size;
     canvas.style.width = "100%";
     canvas.style.height = "100%";
 
-    var currentPalette = initialConfig.palette || {
+    // --- INITIALIZE CANONICAL UPSTREAM CONTROLLERS ---
+    var controller = new LCD.BehaviourController();
+    var ambient = new LCD.AmbientDrift();
+    var physics = new LCD.BlobJellyPhysics();
+    var drag = new LCD.BlobDragController();
+    var lobeStates = LCD.createLobeStates();
+    var wisps = createWispPool(24);
+
+    var currentPalette = Object.assign({
       body: "#edf4ff", edge: "#ffffff", coreTint: "#627d98", innerGlow: "#ffffff",
       density: 1, translucency: 0.85, glowIntensity: 0.8
-    };
+    }, initialConfig.palette || {});
 
     var currentParams = Object.assign({}, LCD.DEFAULT_DEFORMATION);
     var motionConfig = Object.assign({}, LCD.DEFAULT_MOTION_CONFIG);
+    if (initialConfig.cloudSettings) {
+      if (initialConfig.cloudSettings.params) Object.assign(currentParams, initialConfig.cloudSettings.params);
+      if (initialConfig.cloudSettings.motion) Object.assign(motionConfig, initialConfig.cloudSettings.motion);
+      if (initialConfig.cloudSettings.colour) {
+        var col = initialConfig.cloudSettings.colour;
+        if (col.glowIntensity !== undefined) currentPalette.glowIntensity = col.glowIntensity;
+        if (col.density !== undefined) currentPalette.density = col.density;
+        if (col.translucency !== undefined) currentPalette.translucency = col.translucency;
+      }
+    }
     document.body.style.background = initialConfig.screenColour || '#000000';
-    var lobeStates = createLobeStates();
-    var wisps = createWispPool(24);
 
-    var currentRig = LCD.recipeToBlobRig(LCD.getCoreExpression('NEUTRAL'));
-    var targetRig = JSON.parse(JSON.stringify(currentRig));
-    var performance = (LCD.CloudPerformance && typeof LCD.CloudPerformance === 'function') ? new LCD.CloudPerformance() : null;
-    var reactionStarted = 0, reactionClip = null, reactionExpression = null;
-    var reactionDuration = 0;
-    var bodyPose = Object.assign({}, LCD.DEFAULT_BODY_POSE);
     var idleTime = 0;
     var lastFrame = null;
     var prevX = 0, prevY = 0;
-    var prevVx = 0, prevVy = 0;
     var emission = 0;
     var sequence = 0;
-    var lastIdleWisp = 0;
+    var frame = null;
+    var latestRig = null;
 
-    var turnYaw = 0;
-    var turnPitch = 0;
-    var turnVelYaw = 0;
-    var turnVelPitch = 0;
-    var intentX = 0;
-    var intentY = 0;
-    var gazeLeadX = 0;
-    var gazeLeadY = 0;
-    var yawIntent = 0;
-    var pitchIntent = 0;
-
-    // Pointer Drag Spring
-    var dragActive = false;
-    var dragTargetX = 0;
-    var dragTargetY = 0;
-    var dragX = 0, dragY = 0;
-    var dragVx = 0, dragVy = 0;
-
-    var aliases = {idle:'NEUTRAL',REST:'NEUTRAL',happy:'HAPPY',HAPPY_EYES:'HAPPY',excited:'EXCITED',EXCITED_EYES:'EXCITED',curious:'CURIOUS',CURIOUS_WIDE:'CURIOUS',CURIOUS_TILT_LEFT:'CURIOUS',sleepy:'SLEEPY',SLEEPY_EYES:'SLEEPY',surprised:'SURPRISED',SURPRISE_POP:'SURPRISED'};
-    var lastExpressionId = null;
-    function applyEmotionToTarget(id) {
-      var resolvedId = aliases[id] || id;
-      if(resolvedId === lastExpressionId) return;
-      lastExpressionId = resolvedId;
-      var recipe = LCD.getCoreExpression ? LCD.getCoreExpression(resolvedId) : null;
-      if (recipe) targetRig = LCD.recipeToBlobRig(recipe);
-    }
-    function beginReaction(id) {
-      reactionClip = (LCD.CORE_PERFORMANCES && LCD.CORE_PERFORMANCES.find(function(c){return c.id===id})) || null;
-      reactionExpression = reactionClip ? reactionClip.defaultExpressionId : id;
-      reactionStarted = idleTime;
-      reactionDuration = reactionClip ? reactionClip.durationMs + 450 : 2400;
-      if (performance && typeof performance.trigger === 'function') {
-        try { performance.trigger(id); } catch(e) {}
-      }
-    }
-    applyEmotionToTarget(initialConfig.emotionId || 'NEUTRAL');
-    if(initialConfig.reactionId) beginReaction(initialConfig.reactionId);
-    if(initialConfig.behaviourId) beginReaction(initialConfig.behaviourId);
-
-    // Blend rig towards target rig
-    function blendRig(current, target, rate) {
-      for (var k in target) {
-        if (typeof target[k] === "number") {
-          current[k] += (target[k] - current[k]) * rate;
-        } else if (typeof target[k] === "object" && target[k] !== null) {
-          blendRig(current[k], target[k], rate);
-        }
-      }
-    }
-
-    var lead = function(current, target, tau, step) {
-      return current + (target - current) * (1 - Math.exp(-step / Math.max(tau, 1e-3)));
+    var behaviourConfig = {
+      gazePx: LCD.DEFAULT_IDLE.gazeDriftPx,
+      squash: LCD.DEFAULT_IDLE.squashAmount,
+      paceScale: LCD.DEFAULT_IDLE.activityPace,
+      blinkIntervalMs: LCD.DEFAULT_IDLE.blinkInterval * 1000,
     };
 
-    function tick(now) {
-      frame = null;
-      if (initialConfig.active === false || document.hidden) { lastFrame = null; return; }
+    var aliases = {
+      idle: 'REST',
+      NEUTRAL: 'REST',
+      happy: 'HAPPY_BOUNCE',
+      excited: 'EXCITED_WIGGLE',
+      curious: 'CURIOUS_TILT_LEFT',
+      sleepy: 'SLEEPY_YAWN',
+      surprised: 'SURPRISE_POP',
+      angry: 'ANGRY_FLARE',
+      sad: 'SAD_DOWNCAST'
+    };
 
-      var dt = lastFrame === null ? 1 / 60 : (now - lastFrame) / 1000;
-      lastFrame = now;
-      var step = clamp(dt, 0, 0.05);
-      idleTime += step;
-
-      var elapsed = (idleTime - reactionStarted) * 1000;
-      bodyPose = {};
-      var perfRig = null;
-      if (performance) {
-        try { perfRig = performance.update(step * 1000, true); } catch(e) {}
+    function triggerBehaviour(id) {
+      if (!id) return;
+      var resolved = aliases[id] || id;
+      try {
+        controller.trigger(resolved, behaviourConfig);
+      } catch (e) {
+        try { controller.trigger(id, behaviourConfig); } catch (err) {}
       }
-      if (reactionExpression && elapsed <= reactionDuration) {
-        if (perfRig) {
-          targetRig = perfRig;
-          if (perfRig.body) {
-            bodyPose = {
-              x: perfRig.blob ? perfRig.blob.x : 0,
-              y: perfRig.blob ? perfRig.blob.y : 0,
-              scaleX: perfRig.body ? perfRig.body.scaleX - 1 : 0,
-              scaleY: perfRig.body ? perfRig.body.scaleY - 1 : 0,
-            };
-          }
-        } else if(reactionClip) {
-          var sample = LCD.sampleClipAt(reactionClip, elapsed);
-          bodyPose = initialConfig.reducedMotion ? {} : sample.body;
-          applyEmotionToTarget(sample.activeExpressionId);
-        } else {
-          applyEmotionToTarget(reactionExpression);
-        }
-      } else {
-        reactionExpression = null;
-        if (perfRig && (!initialConfig.emotionId || initialConfig.emotionId === 'idle' || initialConfig.emotionId === 'NEUTRAL')) {
-          targetRig = perfRig;
-        } else {
-          applyEmotionToTarget(initialConfig.emotionId || 'NEUTRAL');
-        }
-      }
-      // Blend current facial rig
-      blendRig(currentRig, targetRig, 1 - Math.exp(-9 * step));
-
-      // Pointer drag spring physics
-      var springK = dragActive ? 180 : 95;
-      var springD = dragActive ? 16 : 12;
-      var fDragX = -springK * (dragX - dragTargetX) - springD * dragVx;
-      var fDragY = -springK * (dragY - dragTargetY) - springD * dragVy;
-      dragVx += fDragX * step;
-      dragVy += fDragY * step;
-      dragX += dragVx * step;
-      dragY += dragVy * step;
-
-      // Ambient float and drift
-      var ambientX = initialConfig.reducedMotion ? 0 : Math.sin(idleTime * 0.45) * motionConfig.driftAmount;
-      var ambientY = initialConfig.reducedMotion ? 0 : Math.sin(idleTime * 0.8) * motionConfig.floatAmount;
-
-      var totalX = dragX + ambientX + (bodyPose.x || 0);
-      var totalY = dragY + ambientY + (bodyPose.y || 0);
-
-      var vx = (totalX - prevX) / Math.max(step, 1e-3);
-      var vy = (totalY - prevY) / Math.max(step, 1e-3);
-      prevX = totalX;
-      prevY = totalY;
-
-      var speed = Math.hypot(vx, vy);
-      var ax = (vx - prevVx) / Math.max(step, 1e-3);
-      var ay = (vy - prevVy) / Math.max(step, 1e-3);
-      var acceleration = Math.hypot(ax, ay);
-      prevVx = vx;
-      prevVy = vy;
-
-      // 3D Turn Intent & Heading
-      var predictedVx = vx + ax * 0.09;
-      var predictedVy = vy + ay * 0.09;
-      var MOVE_FLOOR = 13;
-      var intentActive = speed > MOVE_FLOOR;
-      var targetIntentX = intentActive ? clamp(predictedVx / 95, -1, 1) : 0;
-      var targetIntentY = intentActive ? clamp(predictedVy / 130, -1, 1) : 0;
-
-      // Driver turn offset override from mobile proximity heading
-      if (initialConfig.driverYaw) {
-        targetIntentX = clamp(targetIntentX + initialConfig.driverYaw, -1, 1);
-      }
-      if (initialConfig.driverPitch) {
-        targetIntentY = clamp(targetIntentY + initialConfig.driverPitch, -1, 1);
-      }
-
-      var attack = 0.055;
-      var release = 0.34;
-      intentX = lead(intentX, targetIntentX, Math.abs(targetIntentX) > Math.abs(intentX) ? attack : release, step);
-      intentY = lead(intentY, targetIntentY, Math.abs(targetIntentY) > Math.abs(intentY) ? attack : release, step);
-
-      gazeLeadX = lead(gazeLeadX, intentX * 1.12, 0.045, step);
-      gazeLeadY = lead(gazeLeadY, intentY * 0.7, 0.06, step);
-
-      yawIntent = lead(yawIntent, intentX, 0.11, step);
-      pitchIntent = lead(pitchIntent, intentY, 0.13, step);
-
-      var desiredYaw = clamp(yawIntent * 26, -26, 26);
-      var desiredPitch = clamp(pitchIntent * 15, -16, 16);
-
-      var turnSpringK = 125;
-      var turnSpringD = 16.5;
-      var fYaw = -turnSpringK * (turnYaw - desiredYaw) - turnSpringD * turnVelYaw;
-      turnVelYaw += fYaw * step;
-      turnYaw += turnVelYaw * step;
-
-      var fPitch = -turnSpringK * (turnPitch - desiredPitch) - turnSpringD * turnVelPitch;
-      turnVelPitch += fPitch * step;
-      turnPitch += turnVelPitch * step;
-
-      currentParams.turnYaw = clamp(turnYaw, -45, 45);
-      currentParams.turnPitch = clamp(turnPitch, -30, 30);
-
-      var turnGazeX = clamp(gazeLeadX, -1, 1);
-      var turnGazeY = clamp(gazeLeadY, -1, 1);
-      var turnWeight = Math.min(1, Math.abs(turnGazeX) * 1.35);
-      currentParams.gazeX = clamp(currentRig.leftEye.x / 9 * (1 - turnWeight) + turnGazeX, -1, 1);
-      currentParams.gazeY = clamp(currentRig.leftEye.y / 7 * (1 - Math.min(1, Math.abs(turnGazeY) * 1.35)) + turnGazeY, -1, 1);
-
-      currentParams.x = totalX;
-      currentParams.y = totalY;
-      currentParams.scale = currentRig.blob.scale;
-      currentParams.rotation = bodyPose.rotation || 0;
-      currentParams.squash = bodyPose.squash || 0;
-      currentParams.stretch = bodyPose.stretch || 0;
-      currentParams.lean = bodyPose.lean || 0;
-      currentParams.puff = bodyPose.puff || 0;
-
-      // Step Lobe Physics
-      stepLobePhysics(lobeStates, currentParams, motionConfig, vx / currentParams.scale, vy / currentParams.scale, initialConfig.reducedMotion ? 0 : idleTime, step);
-
-      // Mist Trails & Wisps
-      var activeWisps = updateWisps(wisps, step, 1, 1);
-
-      if (step > 0) {
-        var velEnergy = speed > 95 ? clamp((speed - 95) / 140, 0, 1.3) : 0;
-        var accelEnergy = acceleration > 850 ? clamp((acceleration - 850) / 2200, 0, 1.0) : 0;
-        var dynamicEnergy = velEnergy + accelEnergy + (dragActive ? 0.8 : 0);
-
-        var idleWisp = false;
-        if (!dragActive && speed < 15 && idleTime - lastIdleWisp > 11.0) {
-          if (Math.sin(idleTime * 0.65) > 0.985) {
-            idleWisp = true;
-            lastIdleWisp = idleTime;
-          }
-        }
-
-        emission = dynamicEnergy > 0 ? emission + dynamicEnergy * 6 * step : (idleWisp ? 1 : 0);
-        var cap = dragActive ? 16 : (speed > 160 ? 14 : 6);
-
-        while (emission >= 1 && activeWisps < cap) {
-          emission -= 1;
-          var speedNorm = Math.max(1, speed);
-          var nxVel = speed > 5 ? vx / speedNorm : 0;
-          var nyVel = speed > 5 ? vy / speedNorm : -1;
-
-          var seq = sequence++;
-          var radiusJitter = ((seq % 4) - 1.5) * 2;
-          var puffRadius = (14 + (seq % 3) * 3 + radiusJitter) * currentParams.scale;
-          var sideOffset = Math.sin(seq * 2.1) * 26 * currentParams.scale;
-          var trailOffset = (72 + (seq % 3) * 14) * currentParams.scale;
-
-          var spawnX = size / 2 + currentParams.x - nxVel * trailOffset - nyVel * sideOffset;
-          var spawnY = size / 2 + currentParams.y - nyVel * trailOffset + nxVel * sideOffset;
-
-          var smokeVx = -vx * 0.12 + Math.sin(seq * 2.5) * 10;
-          var smokeVy = -vy * 0.12 - 8 + Math.cos(seq * 2.1) * 8;
-
-          spawnWisp(
-            wisps,
-            spawnX, spawnY,
-            smokeVx, smokeVy,
-            puffRadius,
-            seq % 3 === 0 ? currentPalette.body : currentPalette.edge,
-            0.95 * (0.9 + (seq % 3) * 0.15),
-            0.42,
-            seq
-          );
-        }
-        emission = Math.min(emission, 2);
-      }
-
-      // Render Frame
-      renderCloudBlob(ctx, {
-        size: size,
-        renderScale: dpr,
-        lobeStates: lobeStates,
-        colour: currentPalette,
-        wisps: wisps,
-        showFace: true,
-        rig: currentRig,
-        idleTime: initialConfig.reducedMotion ? 0 : idleTime,
-        params: currentParams,
-        showPupils: initialConfig.showPupils || false,
-        vx: vx,
-        vy: vy, colourName: "blue", wallAngle: 0, wallScaleX: 1, wallScaleY: 1, safeRadius: 233, debug: false
-      });
-      var sceneRig = JSON.parse(JSON.stringify(currentRig));
-      sceneRig.blob.x = currentParams.x; sceneRig.blob.y = currentParams.y;
-      sceneRig.blob.yaw = currentParams.turnYaw;
-      sceneRig.body.scaleX = 1 + Math.max(0,currentParams.squash)*.22;
-      sceneRig.body.scaleY = 1 + Math.max(0,currentParams.stretch)*.2;
-      Scene(ctx,sceneRig,step,initialConfig.reducedMotion ? 0 : idleTime,initialConfig.displayMode||'dark',initialConfig.screenColour||'#000000');
-      frame = requestAnimationFrame(tick);
     }
 
-    var frame = requestAnimationFrame(tick);
+    if (initialConfig.behaviourId) triggerBehaviour(initialConfig.behaviourId);
+    else if (initialConfig.reactionId) triggerBehaviour(initialConfig.reactionId);
+    else if (initialConfig.emotionId) triggerBehaviour(initialConfig.emotionId);
 
-    // --- TOUCH & POINTER INTERACTIONS ---
-    var isTouching = false;
-    var touchStartX = 0, touchStartY = 0;
+    // --- POINTER / TOUCH DRAGGING (CANONICAL BLOBDRAGCONTROLLER) ---
+    var pointerId = null;
+    var downX = 0, downY = 0;
+    var isDragging = false;
 
     function getCanvasPoint(clientX, clientY) {
       var rect = canvas.getBoundingClientRect();
       return {
-        x: ((clientX - rect.left) / rect.width) * size - size / 2,
-        y: ((clientY - rect.top) / rect.height) * size - size / 2
+        x: ((clientX - rect.left) / Math.max(1, rect.width)) * size,
+        y: ((clientY - rect.top) / Math.max(1, rect.height)) * size
       };
     }
 
     function onPointerDown(e) {
       if (initialConfig.interactive === false) return;
       var p = getCanvasPoint(e.clientX, e.clientY);
-      var dist = Math.hypot(p.x - dragX, p.y - dragY);
-      if (dist < 140) {
-        isTouching = true;
-        dragActive = true;
-        touchStartX = p.x - dragX;
-        touchStartY = p.y - dragY;
-        e.preventDefault();
-      }
+      var blobX = size / 2 + (latestRig && latestRig.blob ? latestRig.blob.x : 0);
+      var blobY = size / 2 + (latestRig && latestRig.blob ? latestRig.blob.y : 0);
+      // Generous circular touch target across the display
+      if (Math.hypot(p.x - blobX, p.y - blobY) > 235) return;
+      pointerId = e.pointerId;
+      downX = p.x;
+      downY = p.y;
+      isDragging = false;
+      try { if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId); } catch (err) {}
+      if (e.preventDefault) e.preventDefault();
     }
 
     function onPointerMove(e) {
-      if (!isTouching) return;
+      if (pointerId === null || e.pointerId !== pointerId) return;
       var p = getCanvasPoint(e.clientX, e.clientY);
-      dragTargetX = clamp(p.x - touchStartX, -120, 120);
-      dragTargetY = clamp(p.y - touchStartY, -120, 120);
-      e.preventDefault();
+      if (!isDragging) {
+        if (Math.hypot(p.x - downX, p.y - downY) < 3) return;
+        isDragging = true;
+        drag.begin(downX, downY, performance.now());
+      }
+      drag.move(p.x, p.y, performance.now());
+      if (e.preventDefault) e.preventDefault();
     }
 
     function onPointerEnd(e) {
-      if (!isTouching) return;
-      isTouching = false;
-      dragActive = false;
-      dragTargetX = 0;
-      dragTargetY = 0;
+      if (pointerId === null || e.pointerId !== pointerId) return;
+      pointerId = null;
+      try { if (canvas.releasePointerCapture) canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (isDragging) {
+        isDragging = false;
+        drag.end();
+      }
     }
 
-    window.addEventListener("pointerdown", onPointerDown, { passive: false });
+    if (canvas && canvas.addEventListener) {
+      canvas.addEventListener("pointerdown", onPointerDown, { passive: false });
+    }
     window.addEventListener("pointermove", onPointerMove, { passive: false });
     window.addEventListener("pointerup", onPointerEnd);
     window.addEventListener("pointercancel", onPointerEnd);
 
-    // --- WINDOW BRIDGE API ---
+    // --- RENDER LOOP ---
+    function tick(now) {
+      frame = null;
+      if (initialConfig.active === false || document.hidden) {
+        lastFrame = null;
+        return;
+      }
+
+      var dtMs = lastFrame === null ? 16.67 : Math.min(100, Math.max(1, now - lastFrame));
+      lastFrame = now;
+      var step = dtMs / 1000;
+      idleTime += step;
+
+      // 1. Upstream micro-behaviour controller (pose deltas across all 40+ channels)
+      controller.update(dtMs, behaviourConfig, true);
+      var d = controller.pose();
+
+      // 2. Ambient breathing and drift (takes behaviour y for lag)
+      var amb = ambient.update(dtMs, LCD.DEFAULT_IDLE, d.blobY || 0);
+
+      // 3. Jelly target composition
+      var jellyTarget = {
+        x: amb.x + (d.blobX || 0),
+        y: amb.y + (d.blobY || 0),
+        depth: (d.blobDepth || 0),
+        yaw: (d.blobYaw || 0) + (initialConfig.driverYaw || 0),
+        pitch: (d.blobPitch || 0) + (initialConfig.driverPitch || 0),
+        rotation: amb.rotation + (d.blobRotation || 0),
+        scaleX: clamp((d.blobScaleX || 0) + amb.squashX, -0.1, 0.1),
+        scaleY: clamp((d.blobScaleY || 0) + amb.squashY, -0.1, 0.1),
+        bodyX: d.bodyX || 0,
+        bodyY: d.bodyY || 0,
+        bodyRotation: d.bodyRotation || 0,
+        bodyScaleX: clamp(d.bodyScaleX || 0, -0.34, 0.34),
+        bodyScaleY: clamp(d.bodyScaleY || 0, -0.34, 0.34),
+        bodySkewX: d.bodySkewX || 0,
+        bodySkewY: d.bodySkewY || 0,
+        bodyOriginX: d.bodyOriginX || 0,
+        bodyOriginY: d.bodyOriginY || 0.82,
+        bodyDeformAngle: d.bodyDeformAngle || 0,
+        jellyAmount: LCD.DEFAULT_IDLE.jellyAmount,
+        rippleAmount: LCD.DEFAULT_IDLE.rippleAmount,
+      };
+
+      // 4. Drag step: grab springs, wall collision, and soft volume expansion
+      var characterRadius = 0.5;
+      var blobScaleNow = (1 + amb.breath) * (1 + (d.blobScale || 0));
+      var dragPose = drag.step(
+        dtMs,
+        size,
+        size * 0.535 * characterRadius * blobScaleNow,
+        jellyTarget.x,
+        jellyTarget.y
+      );
+      jellyTarget.x += dragPose.x;
+      jellyTarget.y += dragPose.y;
+      jellyTarget.rotation += dragPose.rotation;
+      jellyTarget.scaleX = clamp(jellyTarget.scaleX + dragPose.scaleX, -0.1, 0.1);
+      jellyTarget.scaleY = clamp(jellyTarget.scaleY + dragPose.scaleY, -0.1, 0.1);
+      jellyTarget.bodyDeformAngle = dragPose.wallPressure > 0.01 ? dragPose.deformAngle - (d.bodyRotation || 0) : 0;
+      jellyTarget.bodyScaleX = clamp(jellyTarget.bodyScaleX + dragPose.bodyScaleX, -0.34, 0.34);
+      jellyTarget.bodyScaleY = clamp(jellyTarget.bodyScaleY + dragPose.bodyScaleY, -0.34, 0.34);
+      var contactX = dragPose.contactX;
+      var contactY = dragPose.contactY;
+      var contactPressure = dragPose.wallPressure;
+      jellyTarget.bodySkewX += dragPose.skewX;
+      jellyTarget.bodySkewY += dragPose.skewY;
+
+      // 5. Jelly physical simulation
+      var physical = physics.update(dtMs, jellyTarget);
+
+      // 6. Build rig via canonical applyCalibration
+      var rig = LCD.applyCalibration({
+        blob: Object.assign({}, LCD.NEUTRAL_BLOB, {
+          x: physical.x,
+          y: physical.y,
+          depth: physical.depth,
+          yaw: physical.yaw,
+          pitch: physical.pitch,
+          scale: (1 + amb.breath) * (1 + (d.blobScale || 0)),
+          scaleX: 1,
+          scaleY: 1,
+          rotation: physical.rotation + (d.blobSpin || 0),
+          opacity: d.blobOpacity !== undefined ? d.blobOpacity : 1,
+          faceStyle: d.faceStyle || 0,
+        }),
+        body: Object.assign({}, LCD.NEUTRAL_ELEMENT, {
+          x: physical.bodyX,
+          y: physical.bodyY,
+          rotation: physical.bodyRotation,
+          skewX: physical.bodySkewX,
+          skewY: physical.bodySkewY,
+          originX: physical.bodyOriginX,
+          originY: physical.bodyOriginY,
+          deformAngle: physical.bodyDeformAngle,
+          scaleX: 1 + clamp(physical.scaleX, -0.1, 0.1) + clamp(physical.bodyScaleX, -0.34, 0.34),
+          scaleY: 1 + clamp(physical.scaleY, -0.1, 0.1) + clamp(physical.bodyScaleY, -0.34, 0.34),
+          contactX: contactX,
+          contactY: contactY,
+          contactPressure: contactPressure,
+          rippleTop: physical.rippleTop,
+          rippleUpper: physical.rippleUpper,
+          rippleLower: physical.rippleLower,
+          rippleBottom: physical.rippleBottom,
+        }),
+        leftEye: Object.assign({}, LCD.NEUTRAL_ELEMENT, {
+          x: (d.eyeX || 0) + (d.leftEyeX || 0),
+          y: (d.eyeY || 0) + (d.leftEyeY || 0),
+          socketX: (d.eyeX || 0) + (d.leftEyeX || 0),
+          socketY: (d.eyeY || 0) + (d.leftEyeY || 0),
+          eyeOpen: (d.eyeLid !== undefined ? d.eyeLid : 1) * (d.leftEyeTension !== undefined ? d.leftEyeTension : 1),
+          eyeSocketScaleX: 1 + (d.leftEyeScaleX || 0),
+          eyeSocketScaleY: 1 + (d.leftEyeScaleY || 0),
+          browLift: (d.leftEyeTension !== undefined ? d.leftEyeTension - 1 : 0),
+          browRotation: d.leftBrowRotation || 0,
+          pupilX: d.leftPupilX || 0,
+          pupilY: d.leftPupilY || 0,
+          pupilScale: d.pupilScale !== undefined ? d.pupilScale : 1,
+          lidBias: d.leftLidBias || 0,
+          eyeStyle: d.leftEyeStyle !== undefined ? d.leftEyeStyle : -1,
+          scaleX: 1 + (d.leftEyeScaleX || 0),
+          scaleY: 1 + (d.leftEyeScaleY || 0),
+          rotation: d.leftEyeRotation || 0,
+        }),
+        rightEye: Object.assign({}, LCD.NEUTRAL_ELEMENT, {
+          x: (d.eyeX || 0) + (d.rightEyeX || 0),
+          y: (d.eyeY || 0) + (d.rightEyeY || 0),
+          socketX: (d.eyeX || 0) + (d.rightEyeX || 0),
+          socketY: (d.eyeY || 0) + (d.rightEyeY || 0),
+          eyeOpen: (d.eyeLid !== undefined ? d.eyeLid : 1) * (d.rightEyeTension !== undefined ? d.rightEyeTension : 1),
+          eyeSocketScaleX: 1 + (d.rightEyeScaleX || 0),
+          eyeSocketScaleY: 1 + (d.rightEyeScaleY || 0),
+          browLift: (d.rightEyeTension !== undefined ? d.rightEyeTension - 1 : 0),
+          browRotation: d.rightBrowRotation || 0,
+          pupilX: d.rightPupilX || 0,
+          pupilY: d.rightPupilY || 0,
+          pupilScale: d.pupilScale !== undefined ? d.pupilScale : 1,
+          lidBias: d.rightLidBias || 0,
+          eyeStyle: d.rightEyeStyle !== undefined ? d.rightEyeStyle : -1,
+          scaleX: 1 + (d.rightEyeScaleX || 0),
+          scaleY: 1 + (d.rightEyeScaleY || 0),
+          rotation: d.rightEyeRotation || 0,
+        }),
+        mouth: Object.assign({}, LCD.NEUTRAL_ELEMENT, {
+          x: d.mouthX || 0,
+          y: d.mouthY || 0,
+          scaleX: 1 + (d.mouthScaleX || 0),
+          scaleY: 1 + (d.mouthScaleY || 0),
+          rotation: d.mouthRotation || 0,
+          opacity: d.mouthOpacity !== undefined ? d.mouthOpacity : 1,
+          mouthCurve: d.mouthCurve !== undefined ? d.mouthCurve : 0.82,
+          mouthO: d.mouthO || 0,
+          mouthD: d.mouthD || 0,
+          mouthCrescent: d.mouthCrescent || 0,
+        })
+      }, LCD.DEFAULT_FACE_CALIBRATION);
+      latestRig = rig;
+
+      // 7. Cloud deformation parameters matching CloudCharacter.tsx
+      var pressVal = clamp(rig.body.contactPressure || 0, 0, 1);
+      var cnx = rig.body.contactX || 0;
+      var cny = rig.body.contactY || 0;
+      var pRight = pressVal * Math.max(0, cnx);
+      var pLeft = pressVal * Math.max(0, -cnx);
+      var pDown = pressVal * Math.max(0, cny);
+      var pUp = pressVal * Math.max(0, -cny);
+
+      var cloudDeformParams = Object.assign({}, LCD.DEFAULT_DEFORMATION, currentParams, {
+        squash: clamp((currentParams.squash || 0) + Math.max(0, 1 - rig.body.scaleY) * 2.2 + pressVal * Math.abs(cny) * 0.7, 0, 0.95),
+        stretch: clamp((currentParams.stretch || 0) + Math.max(0, rig.body.scaleY - 1) * 2.2 + pressVal * Math.abs(cnx) * 0.6, 0, 0.95),
+        lean: (currentParams.lean || 0) + rig.body.skewX * 1.6 - cnx * pressVal * 20,
+        leftBulge: (currentParams.leftBulge || 0) + pRight * 26 - pLeft * 12,
+        rightBulge: (currentParams.rightBulge || 0) + pLeft * 26 - pRight * 12,
+        topBulge: (currentParams.topBulge || 0) + pDown * 15 - pUp * 8,
+        bottomSag: (currentParams.bottomSag || 0) + pUp * 15 - pDown * 8,
+        gazeX: clamp(rig.leftEye.x / 9, -1, 1),
+        gazeY: clamp(rig.leftEye.y / 7, -1, 1),
+        x: rig.blob.x,
+        y: rig.blob.y,
+        turnYaw: rig.blob.yaw,
+        turnPitch: rig.blob.pitch,
+      });
+
+      // 8. Wisps / trails update
+      var vx = (rig.blob.x - prevX) / Math.max(step, 1e-3);
+      var vy = (rig.blob.y - prevY) / Math.max(step, 1e-3);
+      prevX = rig.blob.x;
+      prevY = rig.blob.y;
+      var speed = Math.hypot(vx, vy);
+
+      updateWisps(wisps, step, motionConfig.driftSpeed || 1, 1.2);
+      if (isDragging || speed > 22) {
+        emission += step * (speed * 0.08 + 2);
+        while (emission >= 1) {
+          emission -= 1;
+          var speedNorm = Math.max(speed, 1e-3);
+          var nxVel = speed > 5 ? vx / speedNorm : 0;
+          var nyVel = speed > 5 ? vy / speedNorm : -1;
+          var seq = sequence++;
+          var puffRadius = (14 + (seq % 3) * 3) * (currentParams.scale || 1);
+          var sideOffset = Math.sin(seq * 2.1) * 24 * (currentParams.scale || 1);
+          var trailOffset = (65 + (seq % 3) * 12) * (currentParams.scale || 1);
+          var spawnX = size / 2 + rig.blob.x - nxVel * trailOffset - nyVel * sideOffset;
+          var spawnY = size / 2 + rig.blob.y - nyVel * trailOffset + nxVel * sideOffset;
+          spawnWisp(wisps, spawnX, spawnY, -vx * 0.1, -vy * 0.1 - 6, puffRadius, seq % 3 === 0 ? currentPalette.body : currentPalette.edge, 0.9, 0.45, seq);
+        }
+      }
+
+      // 9. Step Lobe Physics
+      LCD.stepLobePhysics(
+        lobeStates,
+        cloudDeformParams,
+        motionConfig,
+        vx / (cloudDeformParams.scale || 1),
+        vy / (cloudDeformParams.scale || 1),
+        idleTime,
+        step
+      );
+
+      // 10. Render Frame
+      LCD.renderCloudBlob(ctx, {
+        size: size,
+        renderScale: 1,
+        lobeStates: lobeStates,
+        colour: currentPalette,
+        wisps: wisps,
+        showFace: true,
+        rig: rig,
+        idleTime: initialConfig.reducedMotion ? 0 : idleTime,
+        params: cloudDeformParams,
+        showPupils: initialConfig.showPupils || false,
+        vx: vx,
+        vy: vy,
+        colourName: "blue",
+        wallAngle: 0,
+        wallScaleX: 1,
+        wallScaleY: 1,
+        safeRadius: 233,
+        debug: false
+      });
+
+      Scene(ctx, rig, step, initialConfig.reducedMotion ? 0 : idleTime, initialConfig.displayMode || 'dark', initialConfig.screenColour || '#000000');
+      frame = requestAnimationFrame(tick);
+    }
+
+    frame = requestAnimationFrame(tick);
+
+    // --- PROPS & BRIDGE UPDATES ---
+    var lastTriggerId = null;
     window.updateCloudProps = function(props) {
       if (!props) return;
-      if (props.screenColour) { initialConfig.screenColour=props.screenColour; document.body.style.background = props.screenColour; }
-      if(props.displayMode) initialConfig.displayMode=props.displayMode;
-      if (props.active !== undefined) {
+      if (props.active !== undefined && props.active !== initialConfig.active) {
         initialConfig.active = props.active;
-        if(props.active && frame===null) frame=requestAnimationFrame(tick);
+        if (props.active && frame === null) frame = requestAnimationFrame(tick);
       }
-      if (props.reducedMotion !== undefined) initialConfig.reducedMotion = props.reducedMotion;
-      if (props.reactionToken !== undefined && props.reactionToken !== initialConfig.reactionToken) {
+      var targetTrigger = props.behaviourId || props.reactionId;
+      if (targetTrigger && (targetTrigger !== lastTriggerId || (props.reactionToken !== undefined && props.reactionToken !== initialConfig.reactionToken))) {
+        lastTriggerId = targetTrigger;
         initialConfig.reactionToken = props.reactionToken;
-        if(props.reactionId) beginReaction(props.reactionId);
-        if(props.behaviourId) beginReaction(props.behaviourId);
-      } else if (props.behaviourId) {
-        beginReaction(props.behaviourId);
+        triggerBehaviour(targetTrigger);
+      } else if (props.emotionId && props.emotionId !== initialConfig.emotionId) {
+        initialConfig.emotionId = props.emotionId;
+        triggerBehaviour(props.emotionId);
       }
       if (props.palette) {
         currentPalette = Object.assign({}, currentPalette, props.palette);
@@ -517,56 +543,46 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
           if (col.translucency !== undefined) currentPalette.translucency = col.translucency;
         }
       }
-      if(props.state && props.state !== initialConfig.state) {
-        initialConfig.state=props.state;
-        var stateConfig=LCD.STATE_EMOTION_MAP[props.state];
-        if(props.state!=='HOME' && stateConfig) beginReaction(stateConfig.performanceId);
-        else {reactionExpression=null;reactionClip=null;}
+      if (props.driverYaw !== undefined) initialConfig.driverYaw = props.driverYaw;
+      if (props.driverPitch !== undefined) initialConfig.driverPitch = props.driverPitch;
+      if (props.showPupils !== undefined) initialConfig.showPupils = props.showPupils;
+      if (props.interactive !== undefined) initialConfig.interactive = props.interactive;
+      if (props.screenColour) {
+        initialConfig.screenColour = props.screenColour;
+        document.body.style.background = props.screenColour;
       }
-      if (props.emotionId) {
-        initialConfig.emotionId = props.emotionId;
-        applyEmotionToTarget(props.emotionId);
-      }
-      if (props.driverYaw !== undefined) {
-        initialConfig.driverYaw = props.driverYaw;
-      }
-      if (props.driverPitch !== undefined) {
-        initialConfig.driverPitch = props.driverPitch;
-      }
-      if (props.showPupils !== undefined) {
-        initialConfig.showPupils = props.showPupils;
-      }
-      if (props.interactive !== undefined) {
-        initialConfig.interactive = props.interactive;
-      }
+      if (props.displayMode) initialConfig.displayMode = props.displayMode;
     };
 
-    document.addEventListener('visibilitychange', function(){if(!document.hidden && frame===null && initialConfig.active!==false) frame=requestAnimationFrame(tick);});
-    window.addEventListener('pagehide', function(){ cancelAnimationFrame(frame); });
-
-    function handleBridgeMessage(event) {
+    window.handleBridgeMessage = function(event) {
       try {
         var data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
         if (!data) return;
-        if (data.type === "dragStart" || data.type === "dragMove") {
-          dragActive = true;
-          isTouching = true;
-          dragTargetX = clamp(data.x, -140, 140);
-          dragTargetY = clamp(data.y, -140, 140);
+        if (data.type === "dragStart") {
+          drag.begin(size / 2 + (data.x || 0), size / 2 + (data.y || 0), performance.now());
+          return;
+        }
+        if (data.type === "dragMove") {
+          drag.move(size / 2 + (data.x || 0), size / 2 + (data.y || 0), performance.now());
           return;
         }
         if (data.type === "dragEnd") {
-          dragActive = false;
-          isTouching = false;
-          dragTargetX = 0;
-          dragTargetY = 0;
+          drag.end();
           return;
         }
         window.updateCloudProps(data);
       } catch (e) {}
-    }
-    window.addEventListener("message", handleBridgeMessage);
-    document.addEventListener("message", handleBridgeMessage);
+    };
+
+    window.addEventListener("message", window.handleBridgeMessage);
+    document.addEventListener("message", window.handleBridgeMessage);
+
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden && frame === null && initialConfig.active !== false) {
+        frame = requestAnimationFrame(tick);
+      }
+    });
+    window.addEventListener('pagehide', function() { cancelAnimationFrame(frame); });
 
   })();
   </script>
