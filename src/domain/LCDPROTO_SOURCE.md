@@ -29,3 +29,9 @@ When updating Cloud or product definitions from a new branch in LCDPROTO:
 2. Update the corresponding modules in `src/domain/`.
 3. Update this provenance log.
 4. Verify using `npx tsc --noEmit` and `npm run lint`.
+
+## CHERRIPI V1 correction
+
+The original synchronization above was a manual adapter and overstated runtime parity. V1 now vendors the exact renderer, face, lobe, expression and performance modules at the same SHA. See `vendor/lcdproto/manifest.json`, `scripts/build-runtime.cjs` and `CHERRIPI_V1.md`. The runtime consumes vendored geometry, not the historical `src/domain/character/geometry.ts` transcription. The canonical lobe source defines eight suspended droplets.
+
+The actual upstream state map uses core recipe IDs (HAPPY, CURIOUS, EXCITED, etc.) rather than controller-only aliases. GOODBYE is a mobile extension, not a ninth upstream state. Canonical scene modes are dark/warm/brown; the previous Sky entry and ad-hoc state material palettes were not upstream definitions and are no longer exposed.

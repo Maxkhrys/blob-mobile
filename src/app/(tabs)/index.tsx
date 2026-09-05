@@ -1,184 +1,148 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { useAppStore } from '../../store/AppContext';
-import { DeviceHeader } from '../../components/home/DeviceHeader';
-import { ProximityStatusCard } from '../../components/home/ProximityStatusCard';
-import { CloudPreview } from '../../components/character/CloudPreview';
-import { Radius, Spacing, Typography } from '../../constants/theme';
-import { Ionicons } from '@expo/vector-icons';
-
+import { getStateMeta } from "../../domain/productStates/stateEmotionMap";
+import React from "react";
+import { View, useWindowDimensions } from "react-native";
+import { useRouter } from "expo-router";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { useAppStore } from "../../store/AppContext";
+import { CloudPreview } from "../../components/character/CloudPreview";
+import { Screen, Copy, Tap, Avatar, layout } from "../../components/ui/Kit";
+import { useTheme } from "../../constants/theme";
+import { narrative } from "../../components/home/narrative";
 export default function HomeScreen() {
-  const router = useRouter();
   const { profile, device, proximity, cloudEmotion, drivers } = useAppStore();
-
-  const activeDriver = proximity.driverId
-    ? drivers.find((d) => d.id === proximity.driverId)
-    : null;
-
+  const router = useRouter();
+  const c = useTheme();
+  const { width } = useWindowDimensions();
+  const name = proximity.driverName || "Your friend";
+  const [title, sub] = narrative(
+    proximity.state,
+    name,
+    profile.characterName || "Your Cherri",
+  );
+  const nearby = drivers.filter((d) =>
+    ["Nearby", "Approaching", "Very close", "Together"].includes(d.status),
+  );
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Device & Driver Header */}
-        <DeviceHeader
-          device={device}
-          profile={profile}
-          onPressDevice={() => router.push('/(tabs)/settings')}
-        />
-
-        {/* Character Emotional Hero Preview */}
-        <View style={styles.heroSection}>
-          <CloudPreview
-            colourId={profile.characterColour}
-            emotion={cloudEmotion}
-            proximityState={proximity.state}
-            driverYaw={
-              proximity.state !== 'HOME' && proximity.direction === 'left'
-                ? -0.5
-                : proximity.state !== 'HOME' && proximity.direction === 'right'
-                ? 0.5
-                : 0
-            }
-            driverPitch={
-              proximity.state !== 'HOME' && proximity.direction === 'ahead'
-                ? -0.2
-                : proximity.state !== 'HOME' && proximity.direction === 'behind'
-                ? 0.25
-                : 0
-            }
-            size={240}
-          />
-        </View>
-
-        {/* Proximity Narrative Card */}
-        <ProximityStatusCard proximity={proximity} />
-
-        {/* Active Driver Companion Card (if sensed/approaching/together) */}
-        {activeDriver && proximity.state !== 'HOME' && proximity.state !== 'GOODBYE' && (
-          <View style={styles.activeDriverCard}>
-            <View
-              style={[
-                styles.driverAvatar,
-                { backgroundColor: activeDriver.avatarColor },
-              ]}
-            >
-              <Text style={styles.driverInitials}>
-                {activeDriver.avatarInitials}
-              </Text>
-            </View>
-            <View style={styles.driverMeta}>
-              <Text style={styles.driverName}>{activeDriver.name}</Text>
-              <Text style={styles.driverCar}>{activeDriver.carName}</Text>
-            </View>
-            <View style={styles.activeTag}>
-              <Text style={styles.activeTagText}>{proximity.state}</Text>
-            </View>
-          </View>
-        )}
-
-        {/* Quick Simulator Access Pill */}
-        <TouchableOpacity
-          style={styles.simulatorPill}
-          onPress={() => router.push('/simulator')}
-          activeOpacity={0.8}
+    <Screen>
+      <View style={layout.between}>
+        <Copy size={20} weight="700" style={{ letterSpacing: 2 }}>
+          CHERRIPI
+        </Copy>
+        <Tap
+          label="Your profile"
+          onPress={() => router.push("/(tabs)/settings")}
         >
-          <Ionicons name="pulse" size={16} color="#4F46E5" />
-          <Text style={styles.simulatorPillText}>
-            Open Proximity Simulator
-          </Text>
-          <Ionicons name="chevron-forward" size={14} color="#6366F1" />
-        </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+          <Avatar name={profile.username} uri={profile.avatarUri} size={42} />
+        </Tap>
+      </View>
+      <View
+        style={{
+          alignItems: "center",
+          gap: 22,
+          paddingTop: 12,
+          paddingBottom: 6,
+        }}
+      >
+        <CloudPreview
+          size={Math.min(width - 64, 326)}
+          colourId={profile.characterColour}
+          environment={profile.environment}
+          emotion={cloudEmotion}
+          proximityState={proximity.state}
+          driverYaw={
+            proximity.state === "HOME"
+              ? 0
+              : proximity.direction === "left"
+                ? -0.5
+                : proximity.direction === "right"
+                  ? 0.5
+                  : 0
+          }
+        />
+        <Tap
+          label="Device settings"
+          onPress={() => router.push("/(tabs)/settings")}
+        >
+          <View style={layout.row}>
+            <View
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor:
+                  device.state === "Connected" ? c.success : c.warning,
+              }}
+            />
+            <Copy size={12} muted>
+              {device.state === "Connected"
+                ? "Cherri is connected"
+                : device.state}{" "}
+              · {device.battery}%
+            </Copy>
+          </View>
+        </Tap>
+      </View>
+      <View style={{ gap: 8, alignItems: "center" }}>
+        <Copy
+          size={28}
+          weight="500"
+          style={{
+            textAlign: "center",
+            letterSpacing: -0.6,
+            color:
+              proximity.state === "HOME"
+                ? c.text
+                : getStateMeta(proximity.state).accent,
+          }}
+        >
+          {title}
+        </Copy>
+        <Copy muted style={{ textAlign: "center", maxWidth: 270 }}>
+          {sub}
+        </Copy>
+      </View>
+      <View style={[layout.row, { justifyContent: "center", gap: 30 }]}>
+        {(
+          [
+            {
+              label: "Customize",
+              icon: "options-outline",
+              route: "/(tabs)/character",
+            },
+            {
+              label: "Your drivers",
+              icon: "people-outline",
+              route: "/(tabs)/drivers",
+            },
+          ] as const
+        ).map((a) => (
+          <Tap
+            key={a.label}
+            label={a.label}
+            onPress={() => router.push(a.route)}
+          >
+            <View style={{ alignItems: "center", gap: 8, padding: 12 }}>
+              <Ionicons name={a.icon} size={23} color={c.text} />
+              <Copy size={13}>{a.label}</Copy>
+            </View>
+          </Tap>
+        ))}
+      </View>
+      <View style={[layout.between, { paddingTop: 4 }]}>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Copy size={14} weight="600">
+            {nearby.length
+              ? `${nearby.length} familiar ${nearby.length === 1 ? "face" : "faces"} nearby`
+              : "The road is quiet"}
+          </Copy>
+          <Copy size={13} muted>
+            {nearby.length
+              ? nearby.map((d) => d.name).join(", ")
+              : "Your next hello will find you here."}
+          </Copy>
+        </View>
+        <Ionicons name="radio-outline" size={25} color={c.textSecondary} />
+      </View>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  scrollContent: {
-    paddingBottom: Spacing.xl,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.md,
-  },
-  activeDriverCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: Spacing.md,
-    marginTop: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  driverAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  driverInitials: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  driverMeta: {
-    flex: 1,
-  },
-  driverName: {
-    ...Typography.headline,
-    color: '#0F172A',
-    fontSize: 15,
-  },
-  driverCar: {
-    ...Typography.caption,
-    color: '#64748B',
-  },
-  activeTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: Radius.full,
-    backgroundColor: '#EEF2FF',
-  },
-  activeTagText: {
-    ...Typography.caption,
-    color: '#4F46E5',
-    fontWeight: '700',
-    fontSize: 11,
-  },
-  simulatorPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EEF2FF',
-    marginHorizontal: Spacing.md,
-    marginTop: Spacing.md,
-    paddingVertical: 12,
-    borderRadius: Radius.full,
-    gap: 8,
-  },
-  simulatorPillText: {
-    ...Typography.callout,
-    color: '#4F46E5',
-    fontWeight: '600',
-    fontSize: 13,
-  },
-});

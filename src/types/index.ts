@@ -1,20 +1,20 @@
 // Proximity state matching exact LCDPROTO domain language
 export type ProximityState =
-  | 'HOME'
-  | 'SENSED'
-  | 'APPROACHING'
-  | 'VERY_CLOSE'
-  | 'TOGETHER'
-  | 'SYNC'
-  | 'CONNECTED'
-  | 'RECOGNIZED'
-  | 'GOODBYE';
+  | "HOME"
+  | "SENSED"
+  | "APPROACHING"
+  | "VERY_CLOSE"
+  | "TOGETHER"
+  | "SYNC"
+  | "CONNECTED"
+  | "RECOGNIZED"
+  | "GOODBYE";
 
 export interface ProximityPayload {
   state: ProximityState;
   driverId?: string;
   driverName?: string;
-  direction?: 'left' | 'right' | 'ahead' | 'behind';
+  direction?: "left" | "right" | "ahead" | "behind";
   distanceMeters?: number;
   closingSpeedMps?: number;
   timestamp: number;
@@ -22,17 +22,13 @@ export interface ProximityPayload {
 
 // Driver types
 export type DriverStatus =
-  | 'Offline'
-  | 'Online'
-  | 'Nearby'
-  | 'Approaching'
-  | 'Very close'
-  | 'Together';
+  "Offline" | "Online" | "Nearby" | "Approaching" | "Very close" | "Together";
 
 export interface Driver {
   id: string;
   name: string;
   carName: string;
+  avatarUri?: string;
   avatarColor: string;
   avatarInitials: string;
   status: DriverStatus;
@@ -41,12 +37,8 @@ export interface Driver {
 
 // Character types (Cloud is the exclusive character for V0)
 export type CloudColourId =
-  | 'white'
-  | 'blue'
-  | 'pink'
-  | 'lavender'
-  | 'mint'
-  | 'peach';
+  "white" | "blue" | "pink" | "lavender" | "mint" | "peach" | "cool-mist"
+  | "baby-blue";
 
 export interface CloudColourPreset {
   id: CloudColourId;
@@ -58,7 +50,7 @@ export interface CloudColourPreset {
   textColor: string;
 }
 
-export type EnvironmentId = 'zen' | 'dark' | 'sky' | 'warm-glow';
+export type EnvironmentId = "zen" | "dark" | "sky" | "warm-glow";
 
 export interface EnvironmentPreset {
   id: EnvironmentId;
@@ -72,20 +64,13 @@ export interface EnvironmentPreset {
 }
 
 export type CloudEmotion =
-  | 'idle'
-  | 'happy'
-  | 'curious'
-  | 'sleepy'
-  | 'excited'
-  | 'surprised';
+  "idle" | "happy" | "curious" | "sleepy" | "excited" | "surprised";
 
 // Device types
-export type DeviceConnectionState = 'Connected' | 'Disconnected' | 'Reconnecting';
+export type DeviceConnectionState =
+  "Connected" | "Disconnected" | "Reconnecting";
 
-export type SleepMode =
-  | 'always-awake'
-  | 'sleep-when-parked'
-  | 'scheduled-auto';
+export type SleepMode = "always-awake" | "sleep-when-parked" | "scheduled-auto";
 
 export interface Device {
   id: string;
@@ -99,7 +84,7 @@ export interface Device {
 }
 
 // Encounters
-export type EncounterType = 'together' | 'passed-nearby' | 'recognized';
+export type EncounterType = "together" | "passed-nearby" | "recognized";
 
 export interface EncounterRecord {
   id: string;
@@ -114,7 +99,7 @@ export interface EncounterRecord {
 }
 
 // User Profile & Preferences
-export type PrivacyMode = 'friends-only' | 'discoverable' | 'invisible';
+export type PrivacyMode = "friends-only" | "discoverable" | "invisible";
 
 export interface NotificationPreferences {
   friendNearby: boolean;
@@ -123,6 +108,16 @@ export interface NotificationPreferences {
 }
 
 export interface UserProfile {
+  themeMode: "system" | "light" | "dark";
+  uiSounds: boolean;
+  haptics: boolean;
+  avatarUri?: string;
+  savedPresets: {
+    id: string;
+    name: string;
+    colourId: CloudColourId;
+    environment: EnvironmentId;
+  }[];
   username: string;
   carName: string;
   characterName: string;

@@ -1,9 +1,9 @@
-import { IDeviceService } from './IDeviceService';
-import { Device, DeviceConnectionState, SleepMode } from '../../types';
+import { IDeviceService } from "./IDeviceService";
+import { Device, DeviceConnectionState, SleepMode } from "../../types";
 import {
   LocalStorageService,
   DEFAULT_DEVICES,
-} from '../storage/LocalStorageService';
+} from "../storage/LocalStorageService";
 
 export class MockDeviceService implements IDeviceService {
   private static instance: MockDeviceService;
@@ -35,16 +35,16 @@ export class MockDeviceService implements IDeviceService {
 
   async setConnectionState(
     deviceId: string,
-    state: DeviceConnectionState
+    state: DeviceConnectionState,
   ): Promise<void> {
     this.devices = this.devices.map((d) =>
       d.id === deviceId
         ? {
             ...d,
             state,
-            lastSynced: state === 'Connected' ? 'Just now' : d.lastSynced,
+            lastSynced: state === "Connected" ? "Just now" : d.lastSynced,
           }
-        : d
+        : d,
     );
     await LocalStorageService.saveDevices(this.devices);
     this.notify();
@@ -53,7 +53,7 @@ export class MockDeviceService implements IDeviceService {
   async setBrightness(deviceId: string, brightness: number): Promise<void> {
     const clamped = Math.max(0, Math.min(100, Math.round(brightness)));
     this.devices = this.devices.map((d) =>
-      d.id === deviceId ? { ...d, brightness: clamped } : d
+      d.id === deviceId ? { ...d, brightness: clamped } : d,
     );
     await LocalStorageService.saveDevices(this.devices);
     this.notify();
@@ -61,18 +61,17 @@ export class MockDeviceService implements IDeviceService {
 
   async setSleepMode(deviceId: string, sleepMode: SleepMode): Promise<void> {
     this.devices = this.devices.map((d) =>
-      d.id === deviceId ? { ...d, sleepMode } : d
+      d.id === deviceId ? { ...d, sleepMode } : d,
     );
     await LocalStorageService.saveDevices(this.devices);
     this.notify();
   }
 
   async reconnect(deviceId: string): Promise<void> {
-    await this.setConnectionState(deviceId, 'Reconnecting');
+    await this.setConnectionState(deviceId, "Reconnecting");
     // Simulate brief reconnection sequence
-    setTimeout(async () => {
-      await this.setConnectionState(deviceId, 'Connected');
-    }, 1200);
+    await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+    await this.setConnectionState(deviceId, "Connected");
   }
 
   subscribe(listener: (devices: Device[]) => void): () => void {
@@ -89,7 +88,7 @@ export class MockDeviceService implements IDeviceService {
       try {
         listener(copy);
       } catch (e) {
-        console.error('Error in device listener:', e);
+        console.error("Error in device listener:", e);
       }
     });
   }

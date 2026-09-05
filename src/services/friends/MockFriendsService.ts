@@ -1,17 +1,17 @@
-import { IFriendsService } from './IFriendsService';
-import { Driver, DriverStatus } from '../../types';
+import { IFriendsService } from "./IFriendsService";
+import { Driver, DriverStatus } from "../../types";
 import {
   LocalStorageService,
   DEFAULT_DRIVERS,
-} from '../storage/LocalStorageService';
+} from "../storage/LocalStorageService";
 
 const AVATAR_COLORS = [
-  '#3B82F6', // Blue
-  '#10B981', // Emerald
-  '#8B5CF6', // Purple
-  '#EC4899', // Pink
-  '#F59E0B', // Amber
-  '#06B6D4', // Cyan
+  "#3B82F6", // Blue
+  "#10B981", // Emerald
+  "#8B5CF6", // Purple
+  "#EC4899", // Pink
+  "#F59E0B", // Amber
+  "#06B6D4", // Cyan
 ];
 
 export class MockFriendsService implements IFriendsService {
@@ -28,7 +28,7 @@ export class MockFriendsService implements IFriendsService {
 
   async init(): Promise<void> {
     const stored = await LocalStorageService.getDrivers();
-    if (stored && stored.length > 0) {
+    if (stored) {
       this.drivers = stored;
       this.notify();
     }
@@ -42,12 +42,16 @@ export class MockFriendsService implements IFriendsService {
     return this.drivers.find((d) => d.id === id);
   }
 
-  async addDriver(name: string, carName?: string): Promise<Driver> {
-    const id = name.toLowerCase().replace(/\s+/g, '-');
+  async addDriver(
+    name: string,
+    carName?: string,
+    avatarUri?: string,
+  ): Promise<Driver> {
+    const id = name.toLowerCase().replace(/\s+/g, "-");
     const initials = name
-      .split(' ')
+      .split(" ")
       .map((part) => part[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
 
@@ -57,11 +61,12 @@ export class MockFriendsService implements IFriendsService {
     const newDriver: Driver = {
       id,
       name: name.trim(),
-      carName: (carName || 'Vehicle').trim(),
+      carName: (carName || "Vehicle").trim(),
+      avatarUri,
       avatarColor: randomColor,
-      avatarInitials: initials || 'DR',
-      status: 'Online',
-      lastSeen: 'Just added',
+      avatarInitials: initials || "DR",
+      status: "Online",
+      lastSeen: "Just added",
     };
 
     // Replace if exists or append
@@ -79,7 +84,7 @@ export class MockFriendsService implements IFriendsService {
 
   async updateDriverStatus(id: string, status: DriverStatus): Promise<void> {
     this.drivers = this.drivers.map((d) =>
-      d.id === id ? { ...d, status, lastSeen: 'Active now' } : d
+      d.id === id ? { ...d, status, lastSeen: "Active now" } : d,
     );
     await LocalStorageService.saveDrivers(this.drivers);
     this.notify();
@@ -99,7 +104,7 @@ export class MockFriendsService implements IFriendsService {
       try {
         listener(copy);
       } catch (e) {
-        console.error('Error in friends listener:', e);
+        console.error("Error in friends listener:", e);
       }
     });
   }

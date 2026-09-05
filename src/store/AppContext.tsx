@@ -4,7 +4,8 @@ import React, {
   useEffect,
   useState,
   useCallback,
-} from 'react';
+  useRef,
+} from "react";
 import {
   UserProfile,
   Device,
@@ -16,15 +17,15 @@ import {
   DeviceConnectionState,
   SleepMode,
   DriverStatus,
-} from '../types';
+} from "../types";
 import {
   LocalStorageService,
   DEFAULT_USER_PROFILE,
-} from '../services/storage/LocalStorageService';
-import { MockDeviceService } from '../services/device/MockDeviceService';
-import { MockFriendsService } from '../services/friends/MockFriendsService';
-import { MockEncountersService } from '../services/encounters/MockEncountersService';
-import { MockProximityService } from '../services/proximity/MockProximityService';
+} from "../services/storage/LocalStorageService";
+import { MockDeviceService } from "../services/device/MockDeviceService";
+import { MockFriendsService } from "../services/friends/MockFriendsService";
+import { MockEncountersService } from "../services/encounters/MockEncountersService";
+import { MockProximityService } from "../services/proximity/MockProximityService";
 
 interface AppContextType {
   isReady: boolean;
@@ -45,19 +46,23 @@ interface AppContextType {
     state: ProximityState,
     driverId?: string,
     driverName?: string,
-    direction?: 'left' | 'right' | 'ahead' | 'behind',
+    direction?: "left" | "right" | "ahead" | "behind",
     distanceMeters?: number,
-    closingSpeedMps?: number
+    closingSpeedMps?: number,
   ) => Promise<void>;
   resetProximity: () => void;
 
   drivers: Driver[];
-  addDriver: (name: string, carName?: string) => Promise<Driver>;
+  addDriver: (
+    name: string,
+    carName?: string,
+    avatarUri?: string,
+  ) => Promise<Driver>;
   updateDriverStatus: (id: string, status: DriverStatus) => Promise<void>;
 
   encounters: EncounterRecord[];
   recordEncounter: (
-    data: Omit<EncounterRecord, 'id' | 'timestamp' | 'formattedTime'>
+    data: Omit<EncounterRecord, "id" | "timestamp" | "formattedTime">,
   ) => Promise<EncounterRecord>;
   clearEncounters: () => Promise<void>;
 
@@ -82,10 +87,10 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [encounters, setEncounters] = useState<EncounterRecord[]>([]);
   const [proximity, setProximity] = useState<ProximityPayload>(() => ({
-    state: 'HOME',
+    state: "HOME",
     timestamp: 0,
   }));
-  const [cloudEmotion, setCloudEmotion] = useState<CloudEmotion>('idle');
+  const [cloudEmotion, setCloudEmotion] = useState<CloudEmotion>("idle");
 
   // Initialize and hydrate from storage
   useEffect(() => {
@@ -107,7 +112,7 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({
           setIsReady(true);
         }
       } catch (err) {
-        console.error('Failed to initialize app state:', err);
+        console.error("Failed to initialize app state:", err);
         if (isMounted) setIsReady(true);
       }
     }
@@ -139,14 +144,16 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
-  const updateProfile = useCallback(
-    async (patch: Partial<UserProfile>) => {
-      const updated = { ...profile, ...patch };
-      setProfile(updated);
-      await LocalStorageService.saveProfile(updated);
-    },
-    [profile]
-  );
+  const profileRef = useRef(profile);
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+  const updateProfile = useCallback(async (patch: Partial<UserProfile>) => {
+    const updated = { ...profileRef.current, ...patch };
+    profileRef.current = updated;
+    setProfile(updated);
+    await LocalStorageService.saveProfile(updated);
+  }, []);
 
   const completeOnboarding = useCallback(
     async (data: Partial<UserProfile>) => {
@@ -158,7 +165,7 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({
       setProfile(updated);
       await LocalStorageService.saveProfile(updated);
     },
-    [profile]
+    [profile],
   );
 
   const resetOnboarding = useCallback(async () => {
@@ -168,35 +175,35 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [profile]);
 
   const primaryDevice = devices[0] || {
-    id: 'cloud-display-01',
-    name: 'Cloud Display',
-    state: 'Connected' as DeviceConnectionState,
+    id: "cloud-display-01",
+    name: "CHERRIPI",
+    state: "Connected" as DeviceConnectionState,
     battery: 92,
     brightness: 80,
-    sleepMode: 'sleep-when-parked' as SleepMode,
-    firmwareVersion: 'v1.2.0-mock',
-    lastSynced: 'Just now',
+    sleepMode: "sleep-when-parked" as SleepMode,
+    firmwareVersion: "v1.2.0-mock",
+    lastSynced: "Just now",
   };
 
   const setDeviceConnection = useCallback(
     async (state: DeviceConnectionState) => {
       await deviceService.setConnectionState(primaryDevice.id, state);
     },
-    [primaryDevice.id]
+    [primaryDevice.id],
   );
 
   const setDeviceBrightness = useCallback(
     async (val: number) => {
       await deviceService.setBrightness(primaryDevice.id, val);
     },
-    [primaryDevice.id]
+    [primaryDevice.id],
   );
 
   const setDeviceSleepMode = useCallback(
     async (mode: SleepMode) => {
       await deviceService.setSleepMode(primaryDevice.id, mode);
     },
-    [primaryDevice.id]
+    [primaryDevice.id],
   );
 
   const reconnectDevice = useCallback(async () => {
@@ -208,106 +215,118 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({
       state: ProximityState,
       driverId?: string,
       driverName?: string,
-      direction?: 'left' | 'right' | 'ahead' | 'behind',
+      direction?: "left" | "right" | "ahead" | "behind",
       distanceMeters?: number,
-      closingSpeedMps?: number
+      closingSpeedMps?: number,
     ) => {
       // Find driver info if driverId passed
       const targetDriver = driverId
         ? friendsService.getDriverById(driverId)
         : undefined;
 
-      const resolvedName = driverName || targetDriver?.name || 'Alex';
-      const resolvedDriverId = driverId || targetDriver?.id || 'alex';
+      const resolvedName = driverName || targetDriver?.name || "Alex";
+      const resolvedDriverId = driverId || targetDriver?.id || "alex";
 
       // Update proximity service
       proximityService.setState({
         state,
         driverId: resolvedDriverId,
         driverName: resolvedName,
-        direction: direction || 'ahead',
+        direction: direction || "ahead",
         distanceMeters:
           distanceMeters !== undefined
             ? distanceMeters
-            : state === 'SENSED'
-            ? 120
-            : state === 'APPROACHING'
-            ? 75
-            : state === 'VERY_CLOSE'
-            ? 18
-            : state === 'TOGETHER'
-            ? 5
-            : 0,
+            : state === "SENSED"
+              ? 120
+              : state === "APPROACHING"
+                ? 75
+                : state === "VERY_CLOSE"
+                  ? 18
+                  : state === "TOGETHER"
+                    ? 5
+                    : 0,
         closingSpeedMps: closingSpeedMps || 8,
       });
 
       // Synchronize driver's status
       if (resolvedDriverId) {
-        let driverStatus: DriverStatus = 'Offline';
-        if (state === 'HOME') driverStatus = 'Online';
-        else if (state === 'SENSED') driverStatus = 'Nearby';
-        else if (state === 'APPROACHING') driverStatus = 'Approaching';
-        else if (state === 'VERY_CLOSE') driverStatus = 'Very close';
-        else if (state === 'TOGETHER' || state === 'SYNC' || state === 'CONNECTED')
-          driverStatus = 'Together';
-        else if (state === 'RECOGNIZED') driverStatus = 'Nearby';
-        else if (state === 'GOODBYE') driverStatus = 'Online';
+        let driverStatus: DriverStatus = "Offline";
+        if (state === "HOME") driverStatus = "Online";
+        else if (state === "SENSED") driverStatus = "Nearby";
+        else if (state === "APPROACHING") driverStatus = "Approaching";
+        else if (state === "VERY_CLOSE") driverStatus = "Very close";
+        else if (
+          state === "TOGETHER" ||
+          state === "SYNC" ||
+          state === "CONNECTED"
+        )
+          driverStatus = "Together";
+        else if (state === "RECOGNIZED") driverStatus = "Nearby";
+        else if (state === "GOODBYE") driverStatus = "Online";
 
         await friendsService.updateDriverStatus(resolvedDriverId, driverStatus);
       }
 
       // Automatically create encounter record on GOODBYE or when finishing Together session
-      if (state === 'GOODBYE') {
+      if (state === "GOODBYE") {
         await encountersService.recordEncounter({
           driverId: resolvedDriverId,
           driverName: resolvedName,
-          driverCar: targetDriver?.carName || 'Vehicle',
-          type: 'together',
+          driverCar: targetDriver?.carName || "Vehicle",
+          type: "together",
           durationMinutes: 3,
           narrative: `Together with ${resolvedName} for 3 min`,
         });
       }
     },
-    []
+    [],
   );
 
   const resetProximity = useCallback(() => {
+    const previousDriver = proximityService.getState().driverId;
+    if (previousDriver)
+      void friendsService.updateDriverStatus(previousDriver, "Online");
     proximityService.reset();
   }, []);
 
   const addDriver = useCallback(
-    async (name: string, carName?: string) => {
-      return await friendsService.addDriver(name, carName);
+    async (name: string, carName?: string, avatarUri?: string) => {
+      return await friendsService.addDriver(name, carName, avatarUri);
     },
-    []
+    [],
   );
 
   const updateDriverStatus = useCallback(
     async (id: string, status: DriverStatus) => {
       await friendsService.updateDriverStatus(id, status);
     },
-    []
+    [],
   );
 
   const recordEncounter = useCallback(
     async (
-      data: Omit<EncounterRecord, 'id' | 'timestamp' | 'formattedTime'>
+      data: Omit<EncounterRecord, "id" | "timestamp" | "formattedTime">,
     ) => {
       return await encountersService.recordEncounter(data);
     },
-    []
+    [],
   );
 
   const clearEncounters = useCallback(async () => {
     await encountersService.clearEncounters();
   }, []);
 
+  const emotionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (emotionTimer.current) clearTimeout(emotionTimer.current);
+    },
+    [],
+  );
   const triggerEmotion = useCallback((emotion: CloudEmotion) => {
+    if (emotionTimer.current) clearTimeout(emotionTimer.current);
     setCloudEmotion(emotion);
-    // Reset to idle after 3 seconds
-    setTimeout(() => {
-      setCloudEmotion((current) => (current === emotion ? 'idle' : current));
-    }, 3000);
+    emotionTimer.current = setTimeout(() => setCloudEmotion("idle"), 3000);
   }, []);
 
   return (
@@ -345,7 +364,7 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({
 export function useAppStore(): AppContextType {
   const context = useContext(AppContext);
   if (!context) {
-    throw new Error('useAppStore must be used within an AppContextProvider');
+    throw new Error("useAppStore must be used within an AppContextProvider");
   }
   return context;
 }

@@ -1,116 +1,68 @@
-import React from 'react';
+import React from "react";
+import { View } from "react-native";
+import { useAppStore } from "../../store/AppContext";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAppStore } from '../../store/AppContext';
-import { EncounterCard } from '../../components/encounters/EncounterCard';
-import { Radius, Spacing, Typography } from '../../constants/theme';
-import { Ionicons } from '@expo/vector-icons';
-
-export default function EncountersScreen() {
-  const { encounters, clearEncounters } = useAppStore();
-
+  Screen,
+  Heading,
+  Copy,
+  Surface,
+  Avatar,
+  layout,
+} from "../../components/ui/Kit";
+export default function MemoriesScreen() {
+  const { encounters, drivers } = useAppStore();
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Encounters</Text>
-          <Text style={styles.subtitle}>
-            Moments shared with friends on the road
-          </Text>
+    <Screen>
+      <Heading
+        title="Crossed paths"
+        subtitle="Small moments. Familiar faces."
+      />
+      {encounters.length ? (
+        encounters.map((e) => (
+          <Surface key={e.id}>
+            <View style={layout.row}>
+              <Avatar
+                name={e.driverName}
+                uri={drivers.find((d) => d.id === e.driverId)?.avatarUri}
+                size={44}
+              />
+              <View style={{ flex: 1 }}>
+                <Copy weight="600">{e.driverName}</Copy>
+                <Copy muted size={12}>
+                  {e.driverCar}
+                </Copy>
+              </View>
+              <Copy muted size={12}>
+                {new Date(e.timestamp).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                })}
+              </Copy>
+            </View>
+            <Copy size={21} weight="500">
+              {e.type === "together"
+                ? `Together for ${e.durationMinutes || 1} min`
+                : e.type === "recognized"
+                  ? `Recognized ${e.driverName}`
+                  : `${e.driverName} passed nearby`}
+            </Copy>
+            <Copy muted size={12}>
+              {new Date(e.timestamp).toLocaleTimeString(undefined, {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </Copy>
+          </Surface>
+        ))
+      ) : (
+        <View style={{ paddingVertical: 60, gap: 12 }}>
+          <Copy size={26}>The first hello is ahead.</Copy>
+          <Copy muted>
+            Your encounters will collect here. No routes, no GPS history. Just
+            the moments you shared.
+          </Copy>
         </View>
-        {encounters.length > 0 && (
-          <TouchableOpacity
-            style={styles.clearButton}
-            onPress={clearEncounters}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.clearButtonText}>Clear</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Social Memory Feed */}
-      <ScrollView
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {encounters.map((encounter) => (
-          <EncounterCard key={encounter.id} encounter={encounter} />
-        ))}
-
-        {encounters.length === 0 && (
-          <View style={styles.emptyState}>
-            <Ionicons name="sparkles-outline" size={48} color="#9CA3AF" />
-            <Text style={styles.emptyTitle}>No encounters yet</Text>
-            <Text style={styles.emptySubtitle}>
-              When you pass nearby or drive alongside connected friends,
-              memories will be saved here.
-            </Text>
-          </View>
-        )}
-      </ScrollView>
-    </SafeAreaView>
+      )}
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
-  title: {
-    ...Typography.title1,
-    color: '#0F172A',
-  },
-  subtitle: {
-    ...Typography.subhead,
-    color: '#64748B',
-  },
-  clearButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: Radius.full,
-    backgroundColor: '#F3F4F6',
-  },
-  clearButtonText: {
-    ...Typography.caption,
-    color: '#6B7280',
-    fontWeight: '600',
-  },
-  listContent: {
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.xl,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    gap: 8,
-    paddingHorizontal: Spacing.xl,
-  },
-  emptyTitle: {
-    ...Typography.headline,
-    color: '#374151',
-  },
-  emptySubtitle: {
-    ...Typography.subhead,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-});

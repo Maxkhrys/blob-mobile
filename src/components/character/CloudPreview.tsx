@@ -1,164 +1,176 @@
-import React, { useEffect, useRef, useMemo } from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
-import { WebView } from 'react-native-webview';
-import { buildCloudHtml } from './cloudCanvasRuntime';
+import React, {
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  useState,
+} from "react";
+import { View, Platform, AppState } from "react-native";
+import { useFocusEffect } from "expo-router";
+import { WebView } from "react-native-webview";
+import { buildCloudHtml, CloudRuntimeConfig } from "./cloudCanvasRuntime";
 import {
   CloudColourId,
   CloudEmotion,
   ProximityState,
   CloudColourConfig,
   BehaviourId,
-} from '../../domain';
-import { getCloudColourPreset } from '../../domain/palettes/presets';
-import { getStateColourOverride } from '../../domain/productStates/statePalettes';
-import { STATE_EMOTION_MAP } from '../../domain/productStates/stateEmotionMap';
-
+} from "../../domain";
+import { getCloudColourPreset } from "../../domain/palettes/presets";
+import { getStateColourOverride } from "../../domain/productStates/statePalettes";
+import { STATE_EMOTION_MAP } from "../../domain/productStates/stateEmotionMap";
+import { getEnvironmentById } from "../../domain/environments/presets";
+import { useReducedMotion } from "../ui/Kit";
 export interface CloudPreviewProps {
   colourId?: CloudColourId;
   palette?: CloudColourConfig;
   emotion?: CloudEmotion | BehaviourId;
   proximityState?: ProximityState;
-  driverYaw?: number; // -1 to 1 horizontal glance / turn
-  driverPitch?: number; // -1 to 1 vertical glance / pitch
+  driverYaw?: number;
+  driverPitch?: number;
   size?: number;
   showPupils?: boolean;
   interactive?: boolean;
+  environment?: string;
+  reactionId?: string;
+  reactionToken?: number;
 }
-
-export const CloudPreview: React.FC<CloudPreviewProps> = ({
-  colourId = 'white',
+export function CloudPreview({
+  colourId = "white",
   palette,
-  emotion = 'idle',
-  proximityState = 'HOME',
+  emotion = "idle",
+  proximityState = "HOME",
   driverYaw = 0,
   driverPitch = 0,
-  size = 240,
+  size = 280,
   showPupils = false,
   interactive = true,
-}) => {
-  const webViewRef = useRef<WebView>(null);
-  const isFirstRender = useRef(true);
-
-  // 1. Resolve active palette:
-  // Direct palette override > Proximity State override > Preset by colourId
-  const resolvedPalette = useMemo<CloudColourConfig>(() => {
-    if (palette) return palette;
-    const stateOverride = getStateColourOverride(proximityState as any);
-    if (stateOverride) return stateOverride;
-    return getCloudColourPreset(colourId).colour;
-  }, [palette, proximityState, colourId]);
-
-  // 2. Resolve active emotion / behaviour:
-  const resolvedEmotionId = useMemo<string>(() => {
-    switch (emotion) {
-      case 'happy':
-        return 'HAPPY_EYES';
-      case 'curious':
-        return 'CURIOUS_TILT_LEFT';
-      case 'sleepy':
-        return 'SLEEPY_EYES';
-      case 'excited':
-        return 'EXCITED_EYES';
-      case 'surprised':
-        return 'SURPRISE_POP';
-      case 'idle': {
-        const stateConfig = STATE_EMOTION_MAP[proximityState as keyof typeof STATE_EMOTION_MAP];
-        if (stateConfig) {
-          return stateConfig.expressionId || stateConfig.performanceId || 'REST';
-        }
-        return 'REST';
-      }
-      default:
-        return emotion;
-    }
-  }, [emotion, proximityState]);
-
-  // 3. Generate initial HTML payload once on mount
-  const [initialHtml] = React.useState(() =>
-    buildCloudHtml({
-      palette: resolvedPalette,
-      state: proximityState,
-      emotionId: resolvedEmotionId,
-      driverYaw,
-      driverPitch,
-      showPupils,
-      size,
-      interactive,
-    })
+  environment = "dark",
+  reactionId,
+  reactionToken,
+}: CloudPreviewProps) {
+  const native = useRef<WebView>(null);
+  const web = useRef<HTMLIFrameElement>(null);
+  const [focused, setFocused] = useState(true);
+  const [foreground, setForeground] = useState(true);
+  const reducedMotion = useReducedMotion();
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, []),
   );
-
-  // 4. Send non-reloading live prop updates via JS bridge
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-
-    const payload = JSON.stringify({
-      palette: resolvedPalette,
-      emotionId: resolvedEmotionId,
-      driverYaw,
-      driverPitch,
-      showPupils,
-      interactive,
-    });
-
-    const script = `if (window.updateCloudProps) { window.updateCloudProps(${payload}); } true;`;
-    webViewRef.current?.injectJavaScript(script);
-  }, [
-    resolvedPalette,
-    resolvedEmotionId,
+    const s = AppState.addEventListener("change", (state) =>
+      setForeground(state === "active"),
+    );
+    return () => s.remove();
+  }, []);
+  const resolved =
+    palette ||
+    getStateColourOverride(proximityState) ||
+    getCloudColourPreset(colourId).colour;
+  const aliases: Record<string, string> = {
+    idle: "NEUTRAL",
+    happy: "HAPPY",
+    excited: "EXCITED",
+    curious: "CURIOUS",
+    sleepy: "SLEEPY",
+    surprised: "SURPRISED",
+  };
+  const emotionId =
+    emotion === "idle"
+      ? STATE_EMOTION_MAP[proximityState].expressionId
+      : aliases[emotion] || emotion;
+  const config: CloudRuntimeConfig = {
+    palette: resolved,
+    state: proximityState,
+    emotionId,
     driverYaw,
     driverPitch,
     showPupils,
     interactive,
-  ]);
-
+    screenColour: getEnvironmentById(environment).screenColour,
+    displayMode: getEnvironmentById(environment).displayMode,
+    active: focused && foreground,
+    reducedMotion,
+    reactionId,
+    reactionToken,
+  };
+  const latest = useRef(config);
+  useEffect(() => {
+    latest.current = config;
+  });
+  const [html] = useState(() => buildCloudHtml(config));
+  const source = useMemo(() => ({ html }), [html]);
+  const send = useCallback(() => {
+    const value = latest.current;
+    if (Platform.OS === "web")
+      web.current?.contentWindow?.postMessage(value, "*");
+    else
+      native.current?.injectJavaScript(
+        `window.updateCloudProps && window.updateCloudProps(${JSON.stringify(value)});true;`,
+      );
+  }, []);
+  const signature = JSON.stringify(config);
+  useEffect(() => send(), [signature, send]);
+  const inner = size - 18;
   return (
     <View
-      style={[
-        styles.container,
-        {
-          width: size,
-          height: size,
-        },
-      ]}
-      pointerEvents={interactive ? 'auto' : 'none'}
+      accessibilityLabel="Your CHERRIPI display"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: "#111110",
+        padding: 8,
+        borderWidth: 1,
+        borderColor: "#494542",
+        boxShadow: "0px 6px 12px rgba(0,0,0,0.16)",
+      }}
     >
-      <WebView
-        ref={webViewRef}
-        originWhitelist={['*']}
-        source={{ html: initialHtml }}
-        style={styles.webView}
-        containerStyle={styles.webViewContainer}
-        scrollEnabled={false}
-        bounces={false}
-        overScrollMode="never"
-        showsHorizontalScrollIndicator={false}
-        showsVerticalScrollIndicator={false}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        scalesPageToFit={false}
-        androidLayerType={Platform.OS === 'android' ? 'hardware' : 'none'}
-      />
+      <View
+        style={{
+          width: inner,
+          height: inner,
+          borderRadius: inner / 2,
+          overflow: "hidden",
+          backgroundColor: getEnvironmentById(environment).screenColour,
+        }}
+      >
+        {Platform.OS === "web" ? (
+          React.createElement("iframe", {
+            ref: web,
+            srcDoc: html,
+            title: "Live Cherri",
+            onLoad: send,
+            style: {
+              border: 0,
+              width: "100%",
+              height: "100%",
+              display: "block",
+            },
+            sandbox: "allow-scripts allow-same-origin",
+          })
+        ) : (
+          <WebView
+            ref={native}
+            source={source}
+            onLoadEnd={send}
+            originWhitelist={["*"]}
+            onShouldStartLoadWithRequest={(r) => r.url === "about:blank"}
+            style={{
+              backgroundColor: "transparent",
+              width: inner,
+              height: inner,
+            }}
+            scrollEnabled={false}
+            bounces={false}
+            javaScriptEnabled
+            androidLayerType="hardware"
+          />
+        )}
+      </View>
     </View>
   );
-};
-
-const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  webViewContainer: {
-    backgroundColor: 'transparent',
-    width: '100%',
-    height: '100%',
-  },
-  webView: {
-    backgroundColor: 'transparent',
-    width: '100%',
-    height: '100%',
-  },
-});
+}

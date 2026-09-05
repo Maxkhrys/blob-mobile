@@ -1,9 +1,9 @@
-import { IEncountersService } from './IEncountersService';
-import { EncounterRecord } from '../../types';
+import { IEncountersService } from "./IEncountersService";
+import { EncounterRecord } from "../../types";
 import {
   LocalStorageService,
   DEFAULT_ENCOUNTERS,
-} from '../storage/LocalStorageService';
+} from "../storage/LocalStorageService";
 
 export class MockEncountersService implements IEncountersService {
   private static instance: MockEncountersService;
@@ -19,7 +19,7 @@ export class MockEncountersService implements IEncountersService {
 
   async init(): Promise<void> {
     const stored = await LocalStorageService.getEncounters();
-    if (stored && stored.length > 0) {
+    if (stored) {
       this.encounters = stored;
       this.notify();
     }
@@ -30,11 +30,11 @@ export class MockEncountersService implements IEncountersService {
   }
 
   async recordEncounter(
-    data: Omit<EncounterRecord, 'id' | 'timestamp' | 'formattedTime'>
+    data: Omit<EncounterRecord, "id" | "timestamp" | "formattedTime">,
   ): Promise<EncounterRecord> {
     const now = new Date();
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
+    const hours = now.getHours().toString().padStart(2, "0");
+    const minutes = now.getMinutes().toString().padStart(2, "0");
     const formattedTime = `Today · ${hours}:${minutes}`;
 
     const newRecord: EncounterRecord = {
@@ -70,7 +70,7 @@ export class MockEncountersService implements IEncountersService {
       try {
         listener(copy);
       } catch (e) {
-        console.error('Error in encounters listener:', e);
+        console.error("Error in encounters listener:", e);
       }
     });
   }

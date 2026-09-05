@@ -1,0 +1,31 @@
+{
+  "repository": "Maxkhrys/LCDPROTO",
+  "branch": "feat/cloud-menu-ui-accents",
+  "sha": "95dafb92b5ba87683294698bb7ea89729fd148d4",
+  "files": {
+    "lib/deviceStates.ts": "2ef2bbb7490f24cbb7eed2b8ceabe5ee6c2cf228f5fb3c14dfd97281d102b38e",
+    "lib/environmentConfig.ts": "6b05f8fef77c4192d0e246c221afec4ba072391918b606088c9a9456e86809d2",
+    "lib/blobMind.ts": "258a805288d8519096590cccf45bca4bdf1f2be8bd2d4185f08956f796d9f9cf",
+    "lib/blobBehaviour.ts": "8851a9e7e2221b86a4c4e389c77db2c3a79b07c782d516504f99166dd087634f",
+    "lib/behaviours/index.ts": "4fe41071ea3239711ac70f02f14a6a9b8c46fda48bb74ac61893b03aa0be5403",
+    "lib/behaviours/controller.ts": "6b084f342bef0a48bffb6ac03be4c636d95fcc5a9f264a02b6d1cad21e57d8aa",
+    "lib/behaviours/types.ts": "d5694a8f94e378883e08fa96c67c8fde61fdc844a9ff17b7c02fae2001ce7ee3",
+    "lib/blobRig.ts": "7c253ac0ccf370bcc63e0cb4817635d1b475fe539811f4d3732b0e6b2017e851",
+    "lib/characters.ts": "3ffa2b0a04da4b933544b5af1745a30e5f3d68763c18ffac98253adb7c98ef8f",
+    "components/experimental/cloud-blob/cloudTypes.ts": "905987c0fa3c4874efe8337910d64e66d5fbacfd4cada62bad98ff91352a6f93",
+    "lib/blobIdle.ts": "7cebed0233c0a89cfb0621a5be60f176ed1dd98b87403a728e99bee68d530d89",
+    "lib/blobCalibration.ts": "40c6c685784398b5e87d14f3e4187f36da7dcac71ad123e7bb33b696fe634d5e",
+    "lib/cloudPresets.ts": "cc37276c644b864d14bd5666bea57349a95b2b30f9027643ea8253c676a70db3",
+    "lib/stateEmotionMap.ts": "dc28c155df818a7d0bb54e345e1b5c86f4b10872a125c48fd8134786e0704c16",
+    "lib/performances/performanceRunner.ts": "f789324b6f3421433d86682f996f6072f1233b89676361512e855b2eeb6e7489",
+    "lib/performances/types.ts": "b483a26d783c7450aa61b226243acfaf2cccb98c582c729dddc05e3a87f74224",
+    "lib/characterTypes.ts": "6e744170f5895292c0151adac74b78aa114b2c1eaba4891ac1702633bdeb284e",
+    "lib/performances/corePerformances.ts": "8afbda1687381d54affe98dbf75dfa222d1d7249519916027d0385bea6cbdd97",
+    "lib/expressions/types.ts": "4148f6f8b7cd2f0094bb065c462b23ced4d6e9ab8abec86f1b19accdf3c71892",
+    "lib/expressions/coreExpressions.ts": "dc50d7dafbd885fdab528df53e5b51295d083230f089b676722ebac59cb9d4a7",
+    "components/experimental/cloud-blob/cloudLobeSystem.ts": "5e8d71a4440d1c90ad46cb88973ff237665c43513268cfc139aec0a1a3edc994",
+    "components/experimental/cloud-blob/cloudRenderer.ts": "cf845b08dfe2873fd6fcdbebd9b838bedddaeabfeee2bd1ab2e15bb242098e36",
+    "components/blob/faceRenderer.ts": "d0628ffa8a0742bc6ab8c99a3e1dce5a8bac8817362ff4bb1a0d1ed030e99335",
+    "components/states/EnvironmentLayer.tsx": "154fa4e95cefc7dfac35e9cd5063499002fca6a6840d6ca846a7b4a9f19eaf3d"
+  }
+}
