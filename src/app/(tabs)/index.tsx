@@ -42,6 +42,20 @@ export default function HomeScreen() {
             colourId={profile.characterColour}
             emotion={cloudEmotion}
             proximityState={proximity.state}
+            driverYaw={
+              proximity.state !== 'HOME' && proximity.direction === 'left'
+                ? -0.5
+                : proximity.state !== 'HOME' && proximity.direction === 'right'
+                ? 0.5
+                : 0
+            }
+            driverPitch={
+              proximity.state !== 'HOME' && proximity.direction === 'ahead'
+                ? -0.2
+                : proximity.state !== 'HOME' && proximity.direction === 'behind'
+                ? 0.25
+                : 0
+            }
             size={240}
           />
         </View>
