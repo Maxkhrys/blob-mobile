@@ -158,7 +158,9 @@ export function CloudPreview({
             source={source}
             onLoadEnd={send}
             originWhitelist={["*"]}
-            onShouldStartLoadWithRequest={(r) => r.url === "about:blank"}
+            onShouldStartLoadWithRequest={(r) =>
+              r.url.startsWith("about:blank") || r.url.startsWith("data:")
+            }
             style={{
               backgroundColor: "transparent",
               width: inner,

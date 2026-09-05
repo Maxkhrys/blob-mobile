@@ -1,4 +1,6 @@
 const fs = require("fs"),
+  path = require("path"),
+  os = require("os"),
   ts = require("typescript"),
   vm = require("vm"),
   assert = require("assert");
@@ -131,8 +133,7 @@ advance(2);
 assert.equal(callbacks.length, 0, "Hidden preview must stop scheduling frames");
 window.updateCloudProps({ active: true });
 assert.equal(callbacks.length, 1);
-advance(2);
-fs.writeFileSync("/tmp/cherripi-runtime.html", html);
+fs.writeFileSync(path.join(os.tmpdir(), "cherripi-runtime.html"), html);
 console.log(
   "PASS: 12 reactions, finite canvas geometry, idle return frames, pause/resume, native 466 render.",
 );
