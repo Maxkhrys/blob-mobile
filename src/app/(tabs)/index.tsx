@@ -4,10 +4,8 @@ import { useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAppStore } from "../../store/AppContext";
 import { CloudPreview } from "../../components/character/CloudPreview";
-import { CharacterStudioModal } from "../../components/character/CharacterStudioModal";
 import { Screen, Avatar, layout } from "../../components/ui/Kit";
 import {
-  GlassPill,
   GlassCircleButton,
   GlassOrbFrame,
   StatusDot,
@@ -44,8 +42,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const c = useTheme();
   const feedback = useFeedback();
-  const { width, height } = useWindowDimensions();
-  const [studioVisible, setStudioVisible] = useState(false);
+  const { width } = useWindowDimensions();
   const [selectedMood, setSelectedMood] = useState<MoodType>("CALM");
 
   const name = proximity.driverName || "Your friend";
@@ -59,8 +56,8 @@ export default function HomeScreen() {
     ["Nearby", "Approaching", "Very close", "Together"].includes(d.status),
   );
 
-  // Dynamic preview size fitted for S22 screen height (~780) and width (~360)
-  const previewSize = Math.min(width * 0.70, height * 0.32, 256);
+  // Dynamic preview size targeted at ~78-82% available width (280px for S22)
+  const previewSize = Math.min(width * 0.78, 285);
 
   const handleMoodSelect = (mood: (typeof MOODS)[number]) => {
     feedback("tick");
@@ -76,177 +73,187 @@ export default function HomeScreen() {
 
   return (
     <Screen scrollable={false} variant="home">
-      {/* 1. Top Bar: CHERRIPI Title, Hardware Status, Studio Pill & Profile Avatar */}
-      <View style={layout.between}>
-        <View style={{ gap: 3 }}>
-          <Text style={styles.brandTitle}>CHERRIPI</Text>
-          <View style={styles.statusRow}>
-            <StatusDot
-              color={device.state === "Connected" ? "#10B981" : "#F59E0B"}
-              size={6}
-            />
-            <Text style={styles.statusSubtext}>
-              {device.state === "Connected" ? "Active" : device.state} •{" "}
-              {device.battery}%
-            </Text>
+      <View style={styles.homeContentWrapper}>
+        {/* 1. Top Bar: CHERRIPI Title, Hardware Status, Studio Pill & Profile Avatar */}
+        <View>
+          <View style={layout.between}>
+            <View style={{ gap: 2 }}>
+              <Text style={styles.brandTitle}>CHERRIPI</Text>
+              <View style={styles.statusRow}>
+                <StatusDot
+                  color={device.state === "Connected" ? "#10B981" : "#F59E0B"}
+                  size={6}
+                />
+                <Text style={styles.statusSubtext}>
+                  {device.state === "Connected" ? "Active" : device.state} •{" "}
+                  {device.battery}%
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.topRightControls}>
+              {/* Milky Translucent Glass Studio Pill */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open Studio"
+                onPress={() => {
+                  feedback("tick");
+                  router.push("/(tabs)/character");
+                }}
+                style={styles.studioPill}
+              >
+                <Ionicons name="sparkles" size={12} color="#FFFFFF" />
+                <Text style={styles.studioPillText}>Studio</Text>
+              </Pressable>
+
+              {/* User Profile Avatar with fine glass rim */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Your profile"
+                onPress={() => router.push("/(tabs)/settings")}
+                style={styles.avatarWrapper}
+              >
+                <Avatar name={profile.username} uri={profile.avatarUri} size={36} />
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Atmospheric Brand Motto */}
+          <View style={styles.mottoContainer}>
+            <Text style={styles.mottoText}>A LITTLE COMPANY</Text>
+            <Text style={styles.mottoText}>FOR WHEREVER YOU GO.</Text>
           </View>
         </View>
 
-        <View style={styles.topRightControls}>
-          {/* Glass Studio Pill */}
-          <GlassPill
-            onPress={() => router.push("/(tabs)/character")}
-            style={styles.studioPill}
-          >
-            <Ionicons name="color-wand-outline" size={14} color="#FFFFFF" />
-            <Text style={styles.studioPillText}>Studio</Text>
-          </GlassPill>
-
-          {/* User Profile Avatar with fine glass rim */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Your profile"
-            onPress={() => router.push("/(tabs)/settings")}
-          >
-            <Avatar name={profile.username} uri={profile.avatarUri} size={38} />
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Atmospheric Brand Motto (inspired by reference) */}
-      <View style={styles.mottoContainer}>
-        <Text style={styles.mottoText}>A LITTLE COMPANY</Text>
-        <Text style={styles.mottoText}>FOR WHEREVER YOU GO.</Text>
-      </View>
-
-      {/* 2. Hero Centerpiece: Glass Orb Frame enclosing Live Draggable Cloud */}
-      <View style={styles.heroSection}>
-        {/* Left Mood Rail (Active glowing ring + vertical mood triggers) */}
-        <View style={styles.moodRail}>
-          {MOODS.map((m) => {
-            const isActive = selectedMood === m.id;
-            return (
-              <Pressable
-                key={m.id}
-                accessibilityRole="button"
-                accessibilityLabel={`Mood: ${m.label}`}
-                onPress={() => handleMoodSelect(m)}
-                style={styles.moodItem}
-              >
-                <View style={styles.moodDotWrapper}>
-                  {isActive && <View style={styles.moodActiveHalo} />}
-                  <View
+        {/* 2. Hero Centerpiece: Pure Integrated Cherri in Crystal Glass Orb */}
+        <View style={styles.heroSection}>
+          {/* Left Mood Rail (Vertical mood triggers with sharp active indicator) */}
+          <View style={styles.moodRail}>
+            {MOODS.map((m) => {
+              const isActive = selectedMood === m.id;
+              return (
+                <Pressable
+                  key={m.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Mood: ${m.label}`}
+                  onPress={() => handleMoodSelect(m)}
+                  style={styles.moodItem}
+                >
+                  <View style={styles.moodDotWrapper}>
+                    {isActive && <View style={styles.moodActiveHalo} />}
+                    <View
+                      style={[
+                        styles.moodDot,
+                        {
+                          backgroundColor: isActive
+                            ? c.electricBlue
+                            : "rgba(255, 255, 255, 0.40)",
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text
                     style={[
-                      styles.moodDot,
+                      styles.moodLabel,
                       {
-                        backgroundColor: isActive
-                          ? c.electricBlue
-                          : "rgba(255, 255, 255, 0.35)",
+                        color: isActive ? "#FFFFFF" : "rgba(240, 244, 252, 0.65)",
+                        fontWeight: isActive ? "700" : "500",
                       },
                     ]}
-                  />
-                </View>
-                <Text
-                  style={[
-                    styles.moodLabel,
-                    {
-                      color: isActive ? "#FFFFFF" : "rgba(240, 244, 252, 0.45)",
-                      fontWeight: isActive ? "700" : "500",
-                    },
-                  ]}
-                >
-                  {m.label}
-                </Text>
-              </Pressable>
-            );
-          })}
+                  >
+                    {m.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Pure Crystal Glass Bubble holding Integrated Draggable Cherri */}
+          <GlassOrbFrame size={previewSize}>
+            <CloudPreview
+              size={previewSize}
+              presentation="integrated"
+              colourId={profile.characterColour}
+              environment={profile.environment}
+              emotion={cloudEmotion}
+              behaviourId={activeBehaviourId ?? undefined}
+              cloudSettings={cloudSettings}
+              proximityState={proximity.state}
+              driverYaw={
+                proximity.state === "HOME"
+                  ? 0
+                  : proximity.direction === "left"
+                    ? -0.5
+                    : proximity.direction === "right"
+                      ? 0.5
+                      : 0
+              }
+            />
+          </GlassOrbFrame>
         </View>
 
-        {/* The Atmospheric Glass Bubble containing Live Cherri */}
-        <GlassOrbFrame size={previewSize}>
-          <CloudPreview
-            size={previewSize - 12}
-            colourId={profile.characterColour}
-            environment={profile.environment}
-            emotion={cloudEmotion}
-            behaviourId={activeBehaviourId ?? undefined}
-            cloudSettings={cloudSettings}
-            proximityState={proximity.state}
-            driverYaw={
-              proximity.state === "HOME"
-                ? 0
-                : proximity.direction === "left"
-                  ? -0.5
-                  : proximity.direction === "right"
-                    ? 0.5
-                    : 0
-            }
-          />
-        </GlassOrbFrame>
+        {/* 3. Four Large Circular Glass Actions Below Hero */}
+        <View style={styles.actionsRow}>
+          {/* Action 1: Expressions (Heart) */}
+          <GlassCircleButton
+            label="Expressions"
+            sublabel="Expressions"
+            size={52}
+            onPress={() => router.push("/(tabs)/character")}
+          >
+            <Ionicons name="heart" size={21} color="#FFFFFF" />
+          </GlassCircleButton>
+
+          {/* Action 2: Sparkle Reaction (Primary action with refined soft halo) */}
+          <GlassCircleButton
+            label="Sparkle"
+            size={58}
+            selected
+            onPress={handleSparkleHeroAction}
+          >
+            <Ionicons name="sparkles" size={23} color="#FFFFFF" />
+          </GlassCircleButton>
+
+          {/* Action 3: Lab & Sliders (Routes directly to /dev-lab) */}
+          <GlassCircleButton
+            label="Lab & Sliders"
+            sublabel="Lab & Sliders"
+            size={52}
+            onPress={() => router.push("/dev-lab")}
+          >
+            <Ionicons name="options-outline" size={21} color="#FFFFFF" />
+          </GlassCircleButton>
+
+          {/* Action 4: Nearby Radar */}
+          <GlassCircleButton
+            label="Nearby"
+            sublabel={nearby.length ? `${nearby.length} Nearby` : "Nearby"}
+            size={52}
+            onPress={() => router.push("/(tabs)/drivers")}
+          >
+            <Ionicons name="radio-outline" size={21} color="#FFFFFF" />
+          </GlassCircleButton>
+        </View>
+
+        {/* 4. Dynamic Narrative Status & Drag Instruction (Safely above floating dock) */}
+        <View style={styles.narrativeSection}>
+          <Text numberOfLines={1} style={styles.narrativeTitle}>
+            {title}
+          </Text>
+          <View style={styles.glowingDivider} />
+          <Text style={styles.dragInstruction}>DRAG TO INTERACT</Text>
+        </View>
       </View>
-
-      {/* 3. Four Large Circular Glass Actions Below Hero */}
-      <View style={styles.actionsRow}>
-        {/* Action 1: Expressions (Heart) */}
-        <GlassCircleButton
-          label="Expressions"
-          sublabel="Expressions"
-          size={52}
-          onPress={() => router.push("/(tabs)/character")}
-        >
-          <Ionicons name="heart" size={21} color="#FFFFFF" />
-        </GlassCircleButton>
-
-        {/* Action 2: Sparkle Reaction (Primary action with electric blue halo) */}
-        <GlassCircleButton
-          label="Sparkle"
-          size={58}
-          selected
-          onPress={handleSparkleHeroAction}
-        >
-          <Ionicons name="sparkles" size={23} color="#FFFFFF" />
-        </GlassCircleButton>
-
-        {/* Action 3: Lab & Sliders (Sliders icon) */}
-        <GlassCircleButton
-          label="Lab & Sliders"
-          sublabel="Lab & Sliders"
-          size={52}
-          onPress={() => setStudioVisible(true)}
-        >
-          <Ionicons name="options-outline" size={21} color="#FFFFFF" />
-        </GlassCircleButton>
-
-        {/* Action 4: Nearby Radar */}
-        <GlassCircleButton
-          label="Nearby"
-          sublabel={nearby.length ? `${nearby.length} Nearby` : "Nearby"}
-          size={52}
-          onPress={() => router.push("/(tabs)/drivers")}
-        >
-          <Ionicons name="radio-outline" size={21} color="#FFFFFF" />
-        </GlassCircleButton>
-      </View>
-
-      {/* 4. Dynamic Narrative Status & Drag Instruction */}
-      <View style={styles.narrativeSection}>
-        <Text numberOfLines={1} style={styles.narrativeTitle}>
-          {title}
-        </Text>
-        <View style={styles.glowingDivider} />
-        <Text style={styles.dragInstruction}>DRAG TO INTERACT</Text>
-      </View>
-
-      {/* Character Studio / Lab Sliders Modal */}
-      <CharacterStudioModal
-        visible={studioVisible}
-        onClose={() => setStudioVisible(false)}
-      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  homeContentWrapper: {
+    flex: 1,
+    justifyContent: "space-between",
+    paddingBottom: 78,
+  },
   brandTitle: {
     fontSize: 20,
     fontWeight: "800",
@@ -260,35 +267,54 @@ const styles = StyleSheet.create({
   },
   statusSubtext: {
     fontSize: 12,
-    color: "rgba(240, 244, 252, 0.70)",
+    color: "rgba(240, 244, 252, 0.75)",
     fontWeight: "500",
   },
   topRightControls: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
   },
   studioPill: {
-    backgroundColor: "rgba(56, 139, 255, 0.28)",
-    borderColor: "rgba(255, 255, 255, 0.25)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(100, 160, 255, 0.28)",
+    borderColor: "rgba(255, 255, 255, 0.45)",
+    borderWidth: 1,
+    borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
+    shadowColor: "#388BFF",
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 3,
   },
   studioPillText: {
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "600",
+    letterSpacing: 0.3,
+  },
+  avatarWrapper: {
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.45)",
+    borderRadius: 20,
+    padding: 1,
+    shadowColor: "#000000",
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
   mottoContainer: {
     alignSelf: "flex-end",
-    marginRight: 4,
+    marginRight: 2,
     marginTop: -4,
   },
   mottoText: {
-    fontSize: 8.5,
+    fontSize: 8.8,
     letterSpacing: 1.4,
     fontWeight: "600",
-    color: "rgba(240, 244, 252, 0.45)",
+    color: "rgba(255, 255, 255, 0.72)",
     textAlign: "right",
   },
   heroSection: {
@@ -296,14 +322,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
-    marginVertical: 4,
+    marginVertical: 2,
   },
   moodRail: {
     position: "absolute",
-    left: 2,
-    top: 4,
+    left: 4,
+    top: 10,
     zIndex: 10,
-    gap: 11,
+    gap: 13,
   },
   moodItem: {
     flexDirection: "row",
@@ -312,23 +338,23 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   moodDotWrapper: {
-    width: 14,
-    height: 14,
+    width: 12,
+    height: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   moodActiveHalo: {
     position: "absolute",
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     borderWidth: 1.5,
     borderColor: "#388BFF",
   },
   moodDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
   },
   moodLabel: {
     fontSize: 9.5,
@@ -338,23 +364,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    paddingHorizontal: 14,
-    marginTop: 2,
+    paddingHorizontal: 12,
   },
   narrativeSection: {
     alignItems: "center",
-    gap: 6,
-    paddingBottom: 6,
+    gap: 5,
   },
   narrativeTitle: {
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: "700",
     color: "#FFFFFF",
     letterSpacing: -0.3,
     textAlign: "center",
   },
   glowingDivider: {
-    width: 42,
+    width: 38,
     height: 2,
     borderRadius: 1,
     backgroundColor: "#388BFF",
@@ -366,7 +390,7 @@ const styles = StyleSheet.create({
   dragInstruction: {
     fontSize: 10,
     fontWeight: "600",
-    letterSpacing: 1.8,
-    color: "rgba(240, 244, 252, 0.50)",
+    letterSpacing: 2.0,
+    color: "rgba(255, 255, 255, 0.65)",
   },
 });

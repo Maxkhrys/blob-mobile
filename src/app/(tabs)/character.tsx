@@ -15,6 +15,7 @@ import { CloudPreview } from "../../components/character/CloudPreview";
 import { ColourSwatchPicker } from "../../components/character/ColourSwatchPicker";
 import { EnvironmentPicker } from "../../components/character/EnvironmentPicker";
 import { Screen } from "../../components/ui/Kit";
+import { CherriThumbnail } from "../../components/character/CherriThumbnail";
 import {
   GlassSurface,
   GlassCard,
@@ -107,28 +108,42 @@ export default function CharacterScreen() {
     handleTriggerExpression(moodBehaviours[nextIdx]?.id);
   };
 
+  // Explicit absolute animation speed configuration (prevents compounding mutation)
   const cycleSpeed = () => {
     feedback("tick");
-    const next = animationSpeed === "Normal" ? "Energetic" : animationSpeed === "Energetic" ? "Gentle" : "Normal";
+    const next =
+      animationSpeed === "Normal"
+        ? "Energetic"
+        : animationSpeed === "Energetic"
+          ? "Gentle"
+          : "Normal";
     setAnimationSpeed(next);
-    const speedVal = next === "Energetic" ? 1.3 : next === "Gentle" ? 0.7 : 1.0;
+
+    const speedPresets = {
+      Gentle: { floatAmount: 2.8, driftAmount: 1.8, floatSpeed: 0.0004 },
+      Normal: { floatAmount: 4.5, driftAmount: 2.5, floatSpeed: 0.0008 },
+      Energetic: { floatAmount: 6.2, driftAmount: 3.6, floatSpeed: 0.0013 },
+    };
+
     updateCloudSettings({
       motion: {
         ...cloudSettings.motion,
-        floatAmount: (cloudSettings.motion?.floatAmount ?? 4) * speedVal,
+        ...speedPresets[next],
       },
     });
   };
 
   const handleIntensityChange = (val: number) => {
-    setIntensity(Math.round(val));
-    setDeviceBrightness(Math.round(val));
+    const rounded = Math.round(val);
+    setIntensity(rounded);
+    setDeviceBrightness(rounded);
   };
 
-  const previewSize = Math.min(width - 96, 210);
+  // Generous size for Cherri in Studio preview
+  const previewSize = Math.min(width - 70, 230);
 
   return (
-    <Screen scrollable variant="calm">
+    <Screen scrollable variant="calm" contentPaddingBottom={155}>
       {/* 1. Sheet Header with Grabber, Title, Subtitle, and Close Button */}
       <View style={styles.sheetHeader}>
         <View style={styles.grabber} />
@@ -174,8 +189,8 @@ export default function CharacterScreen() {
       {/* TAB 1: EXPRESSIONS (Matches Right Side Reference)             */}
       {/* ------------------------------------------------------------- */}
       {currentTab === "expressions" && (
-        <View style={{ gap: 16 }}>
-          {/* Mood Filter Capsules */}
+        <View style={{ gap: 14 }}>
+          {/* Mood Filter Capsules (Translucent glass - no flat solid fill) */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -198,11 +213,15 @@ export default function CharacterScreen() {
                     styles.moodChip,
                     {
                       backgroundColor: isSelected
-                        ? "#388BFF"
+                        ? "rgba(56, 139, 255, 0.28)"
                         : "rgba(255, 255, 255, 0.08)",
                       borderColor: isSelected
                         ? "#388BFF"
-                        : "rgba(255, 255, 255, 0.16)",
+                        : "rgba(255, 255, 255, 0.18)",
+                      shadowColor: isSelected ? "#388BFF" : "transparent",
+                      shadowOpacity: isSelected ? 0.45 : 0,
+                      shadowRadius: isSelected ? 8 : 0,
+                      elevation: isSelected ? 3 : 0,
                     },
                   ]}
                 >
@@ -222,7 +241,7 @@ export default function CharacterScreen() {
             })}
           </ScrollView>
 
-          {/* Large Central Preview Card with Live Cherri & Stepper Arrows */}
+          {/* Barely-There Frosted Glass Sheet with Integrated Live Draggable Cherri */}
           <GlassCard style={styles.previewCard}>
             <View style={styles.previewCardInner}>
               <GlassCircleButton
@@ -236,10 +255,12 @@ export default function CharacterScreen() {
               <View style={{ alignItems: "center" }}>
                 <CloudPreview
                   size={previewSize}
+                  presentation="integrated"
                   colourId={profile.characterColour}
                   environment={profile.environment}
                   behaviourId={playingId || activeBehaviourId || activeExpression?.id}
                   cloudSettings={cloudSettings}
+                  interactive={true}
                 />
               </View>
 
@@ -263,7 +284,7 @@ export default function CharacterScreen() {
             </View>
           </GlassCard>
 
-          {/* Mini Expression Thumbnail / Strip */}
+          {/* Mini Cherri Cloud Expression Thumbnails */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -286,24 +307,29 @@ export default function CharacterScreen() {
                     {
                       borderColor: isSelected
                         ? "#388BFF"
-                        : "rgba(255, 255, 255, 0.12)",
+                        : "rgba(255, 255, 255, 0.16)",
                       backgroundColor: isSelected
-                        ? "rgba(56, 139, 255, 0.18)"
-                        : "rgba(255, 255, 255, 0.06)",
+                        ? "rgba(56, 139, 255, 0.22)"
+                        : "rgba(255, 255, 255, 0.07)",
+                      shadowColor: isSelected ? "#388BFF" : "transparent",
+                      shadowOpacity: isSelected ? 0.45 : 0,
+                      shadowRadius: isSelected ? 8 : 0,
+                      elevation: isSelected ? 3 : 0,
                     },
                   ]}
                 >
-                  <Ionicons
-                    name={isSelected ? "sparkles" : "happy-outline"}
-                    size={20}
-                    color={isSelected ? "#388BFF" : "rgba(240, 244, 252, 0.70)"}
+                  <CherriThumbnail
+                    expressionId={item.id}
+                    size={40}
+                    selected={isSelected}
                   />
                   <Text
                     numberOfLines={1}
                     style={[
                       styles.miniCardText,
                       {
-                        color: isSelected ? "#FFFFFF" : "rgba(240, 244, 252, 0.60)",
+                        color: isSelected ? "#FFFFFF" : "rgba(240, 244, 252, 0.65)",
+                        fontWeight: isSelected ? "600" : "400",
                       },
                     ]}
                   >
@@ -314,18 +340,20 @@ export default function CharacterScreen() {
             })}
           </ScrollView>
 
-          {/* Intensity Slider (Real runtime brightness & amplitude mapping) */}
+          {/* Display Brightness Slider (Direct hardware backlight mapping) */}
           <GlassSurface style={styles.controlRowCard}>
             <View style={styles.controlRowHeader}>
-              <Text style={styles.controlRowLabel}>Intensity</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons
+                  name="sunny"
+                  size={16}
+                  color="rgba(255, 255, 255, 0.85)"
+                />
+                <Text style={styles.controlRowLabel}>Display Brightness</Text>
+              </View>
               <Text style={styles.controlRowValue}>{intensity}%</Text>
             </View>
             <View style={styles.sliderWrapper}>
-              <Ionicons
-                name="sunny-outline"
-                size={18}
-                color="rgba(240, 244, 252, 0.65)"
-              />
               <Slider
                 style={{ flex: 1, height: 32 }}
                 minimumValue={10}
@@ -369,7 +397,7 @@ export default function CharacterScreen() {
             title="Preview Mood"
             icon={<Ionicons name="play" size={17} color="#FFFFFF" />}
             onPress={() => handleTriggerExpression()}
-            style={{ marginTop: 4 }}
+            style={{ marginTop: 6 }}
           />
         </View>
       )}

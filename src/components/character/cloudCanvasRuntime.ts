@@ -23,6 +23,7 @@ export interface CloudRuntimeConfig {
   debugTelemetry?: boolean;
   lcdprotoSourceSha?: string;
   expressionRecipe?: ExpressionRecipe | null;
+  presentation?: "hardware" | "integrated";
 }
 
 export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
@@ -151,7 +152,11 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       }
     }
     applyCloudSettings(initialConfig.cloudSettings);
-    document.body.style.background = initialConfig.screenColour || '#000000';
+    if (initialConfig.presentation === "integrated") {
+      document.body.style.background = "transparent";
+    } else {
+      document.body.style.background = initialConfig.screenColour || "#000000";
+    }
 
     var idleTime = 0;
     var lastFrame = null;
@@ -607,7 +612,7 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
         safeRadius: Math.max(0, size / 2 - hitRadius),
         debug: false
       });
-      Scene(ctx, rig, step, initialConfig.reducedMotion ? 0 : idleTime, initialConfig.displayMode || 'dark', initialConfig.screenColour || '#000000');
+      Scene(ctx, rig, step, initialConfig.reducedMotion ? 0 : idleTime, initialConfig.displayMode || 'dark', initialConfig.screenColour || '#000000', initialConfig.presentation === 'integrated');
 
       if (initialConfig.debugTelemetry && now - lastTelemetryAt >= 250) {
         lastTelemetryAt = now;
@@ -664,9 +669,19 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       if (props.state !== undefined) initialConfig.state = props.state;
       if (props.lcdprotoSourceSha) initialConfig.lcdprotoSourceSha = props.lcdprotoSourceSha;
       if (props.expressionRecipe !== undefined) manualRecipe = props.expressionRecipe;
+      if (props.presentation !== undefined) {
+        initialConfig.presentation = props.presentation;
+        if (props.presentation === "integrated") {
+          document.body.style.background = "transparent";
+        } else if (props.screenColour || initialConfig.screenColour) {
+          document.body.style.background = props.screenColour || initialConfig.screenColour || "#000000";
+        }
+      }
       if (props.screenColour) {
         initialConfig.screenColour = props.screenColour;
-        document.body.style.background = props.screenColour;
+        if (initialConfig.presentation !== "integrated") {
+          document.body.style.background = props.screenColour;
+        }
       }
       if (props.displayMode) initialConfig.displayMode = props.displayMode;
     };

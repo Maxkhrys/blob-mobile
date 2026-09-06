@@ -226,18 +226,33 @@ export function GlassCircleButton({
               height: size,
               borderRadius: size / 2,
               backgroundColor: selected
-                ? "rgba(40, 100, 220, 0.45)"
-                : "rgba(255, 255, 255, 0.08)",
-              borderColor: selected ? c.electricBlue : c.glassBorder,
-              shadowColor: selected ? c.electricBlue : "rgba(0, 0, 0, 0.25)",
-              shadowOpacity: selected ? 0.6 : 0.2,
-              shadowRadius: selected ? 14 : 6,
-              elevation: selected ? 6 : 2,
+                ? "rgba(45, 95, 210, 0.38)"
+                : "rgba(255, 255, 255, 0.09)",
+              borderColor: selected ? "rgba(100, 180, 255, 0.85)" : "rgba(255, 255, 255, 0.26)",
+              borderWidth: 1,
+              shadowColor: selected ? "#388BFF" : "rgba(0, 0, 0, 0.35)",
+              shadowOffset: { width: 0, height: 3 },
+              shadowOpacity: selected ? 0.45 : 0.25,
+              shadowRadius: selected ? 10 : 6,
+              elevation: selected ? 5 : 2,
               opacity: disabled ? 0.45 : pressed ? 0.85 : 1,
             },
             style,
           ]}
         >
+          {/* Subtle top edge specular highlight */}
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: 1.5,
+              width: size * 0.55,
+              height: 1.2,
+              borderRadius: 1,
+              backgroundColor: "rgba(255, 255, 255, 0.55)",
+            }}
+          />
+
           {/* Glowing blue halo ring for selected state */}
           {selected && (
             <View
@@ -245,10 +260,11 @@ export function GlassCircleButton({
               style={[
                 styles.selectedHalo,
                 {
-                  width: size + 10,
-                  height: size + 10,
-                  borderRadius: (size + 10) / 2,
-                  borderColor: "rgba(56, 139, 255, 0.45)",
+                  width: size + 8,
+                  height: size + 8,
+                  borderRadius: (size + 8) / 2,
+                  borderColor: "rgba(56, 139, 255, 0.40)",
+                  borderWidth: 1,
                 },
               ]}
             />
@@ -295,8 +311,8 @@ export function GlassSegmentedControl<T extends string>({
       style={[
         styles.segmentedContainer,
         {
-          backgroundColor: "rgba(20, 28, 48, 0.55)",
-          borderColor: c.glassBorder,
+          backgroundColor: "rgba(18, 24, 44, 0.48)",
+          borderColor: "rgba(255, 255, 255, 0.20)",
         },
       ]}
     >
@@ -314,10 +330,10 @@ export function GlassSegmentedControl<T extends string>({
             style={[
               styles.segmentedItem,
               isSelected && {
-                backgroundColor: "rgba(56, 139, 255, 0.35)",
-                borderColor: "rgba(56, 139, 255, 0.65)",
-                shadowColor: c.electricBlue,
-                shadowOpacity: 0.4,
+                backgroundColor: "rgba(75, 145, 255, 0.28)",
+                borderColor: "rgba(120, 185, 255, 0.65)",
+                shadowColor: "#388BFF",
+                shadowOpacity: 0.35,
                 shadowRadius: 8,
                 elevation: 3,
               },
@@ -504,27 +520,26 @@ export function GlassOrbFrame({
         ]}
       />
 
-      {/* Subtle inner reflection rim */}
+      {/* Subtle top specular crescent highlight */}
       <View
         pointerEvents="none"
         style={[
-          styles.orbInnerRim,
+          styles.orbTopHighlight,
           {
-            width: size - 4,
-            height: size - 4,
-            borderRadius: (size - 4) / 2,
+            width: size * 0.60,
+            top: 2,
           },
         ]}
       />
 
-      {/* Ground contact lighting bloom */}
+      {/* Subtle warm sunset reflection at bottom of sphere */}
       <View
         pointerEvents="none"
         style={[
-          styles.orbGroundGlow,
+          styles.orbBottomReflection,
           {
-            width: size * 0.75,
-            bottom: -6,
+            width: size * 0.50,
+            bottom: 4,
           },
         ]}
       />
@@ -618,24 +633,22 @@ const styles = StyleSheet.create({
   },
   orbRim: {
     position: "absolute",
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.42)",
-    shadowColor: "rgba(56, 139, 255, 0.6)",
-    shadowOpacity: 0.55,
-    shadowRadius: 18,
+    borderWidth: 1.2,
+    borderColor: "rgba(255, 255, 255, 0.32)",
+    shadowColor: "#388BFF",
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
   },
-  orbInnerRim: {
+  orbTopHighlight: {
     position: "absolute",
-    borderWidth: 1,
-    borderColor: "rgba(56, 139, 255, 0.25)",
+    height: 1.5,
+    borderRadius: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.55)",
   },
-  orbGroundGlow: {
+  orbBottomReflection: {
     position: "absolute",
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: "rgba(232, 165, 152, 0.32)",
-    shadowColor: "#E8A598",
-    shadowOpacity: 0.8,
-    shadowRadius: 12,
+    height: 1.5,
+    borderRadius: 1,
+    backgroundColor: "rgba(255, 215, 185, 0.30)",
   },
 });

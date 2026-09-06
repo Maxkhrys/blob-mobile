@@ -34,12 +34,19 @@ const TAB_ICONS: Record<
   settings: { focused: "settings", normal: "settings-outline", label: "Settings" },
 };
 
+export const TAB_BAR_HEIGHT = 56;
+
+export function useTabBarInset() {
+  const insets = useSafeAreaInsets();
+  return TAB_BAR_HEIGHT + Math.max(insets.bottom, 12) + 24;
+}
+
 export function GlassTabBar({ state, descriptors, navigation }: GlassTabBarProps) {
   const insets = useSafeAreaInsets();
   const feedback = useFeedback();
 
   // Floating dock sits nicely above bottom safe area
-  const bottomMargin = Math.max(insets.bottom, 12);
+  const bottomMargin = Math.max(insets.bottom, 10);
 
   return (
     <View pointerEvents="box-none" style={[styles.outerWrapper, { bottom: bottomMargin }]}>
@@ -47,8 +54,8 @@ export function GlassTabBar({ state, descriptors, navigation }: GlassTabBarProps
         style={[
           styles.dockContainer,
           {
-            backgroundColor: "rgba(16, 22, 38, 0.78)",
-            borderColor: "rgba(255, 255, 255, 0.16)",
+            backgroundColor: "rgba(20, 28, 50, 0.48)",
+            borderColor: "rgba(255, 255, 255, 0.22)",
             shadowColor: "#000000",
           },
         ]}
@@ -56,7 +63,7 @@ export function GlassTabBar({ state, descriptors, navigation }: GlassTabBarProps
         {/* Top subtle inner specular highlight */}
         <View
           pointerEvents="none"
-          style={[styles.dockHighlight, { borderColor: "rgba(255, 255, 255, 0.28)" }]}
+          style={[styles.dockHighlight, { borderColor: "rgba(255, 255, 255, 0.35)" }]}
         />
 
         {state.routes.map((route, index) => {
@@ -92,17 +99,17 @@ export function GlassTabBar({ state, descriptors, navigation }: GlassTabBarProps
             >
               {isFocused ? (
                 <View style={styles.activeIconContainer}>
-                  {/* Glowing electric blue halo circle */}
+                  {/* Subtle soft blue halo */}
                   <View style={styles.activeGlowHalo} />
                   <View style={styles.activeCircle}>
-                    <Ionicons name={meta.focused} size={19} color="#FFFFFF" />
+                    <Ionicons name={meta.focused} size={18} color="#FFFFFF" />
                   </View>
                 </View>
               ) : (
                 <View style={styles.inactiveIconContainer}>
                   <Ionicons
                     name={meta.normal}
-                    size={21}
+                    size={20}
                     color="rgba(240, 244, 252, 0.65)"
                   />
                 </View>
@@ -130,8 +137,8 @@ export function GlassTabBar({ state, descriptors, navigation }: GlassTabBarProps
 const styles = StyleSheet.create({
   outerWrapper: {
     position: "absolute",
-    left: 14,
-    right: 14,
+    left: 16,
+    right: 16,
     alignItems: "center",
     zIndex: 100,
   },
@@ -141,20 +148,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-around",
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    borderRadius: 34,
-    borderWidth: 1.2,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.45,
-    shadowRadius: 20,
-    elevation: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    borderRadius: 30,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 10,
   },
   dockHighlight: {
     position: "absolute",
     top: 0,
-    left: 16,
-    right: 16,
+    left: 18,
+    right: 18,
     height: 1,
     borderTopWidth: 1,
   },
@@ -162,43 +169,43 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 3,
+    gap: 2,
     paddingVertical: 2,
   },
   activeIconContainer: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
   },
   activeGlowHalo: {
     position: "absolute",
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(56, 139, 255, 0.35)",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(56, 139, 255, 0.22)",
   },
   activeCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 33,
+    height: 33,
+    borderRadius: 16.5,
     backgroundColor: "#388BFF",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#388BFF",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.7,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 4,
   },
   inactiveIconContainer: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: 9.5,
     letterSpacing: 0.2,
   },
 });

@@ -59,6 +59,7 @@ export interface CloudPreviewProps {
   commandToken?: number;
   expressionRecipe?: ExpressionRecipe | null;
   debugTelemetry?: boolean;
+  presentation?: "hardware" | "integrated";
   onTelemetry?: (telemetry: DevLabTelemetry) => void;
 }
 
@@ -82,6 +83,7 @@ export function CloudPreview({
   commandToken = 0,
   expressionRecipe = null,
   debugTelemetry = false,
+  presentation = "integrated",
   onTelemetry,
 }: CloudPreviewProps) {
   const native = useRef<WebView>(null);
@@ -140,6 +142,7 @@ export function CloudPreview({
     expressionRecipe,
     debugTelemetry,
     lcdprotoSourceSha: LCDPROTO_SOURCE_SHA,
+    presentation,
   };
 
   const latest = useRef(config);
@@ -209,6 +212,62 @@ export function CloudPreview({
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
   }, [handleTelemetry]);
+
+  if (presentation === "integrated") {
+    return (
+      <View
+        accessibilityLabel="Your CHERRIPI character"
+        style={{
+          width: size,
+          height: size,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "transparent",
+        }}
+      >
+        {Platform.OS === "web" ? (
+          React.createElement("iframe", {
+            ref: web,
+            srcDoc: html,
+            title: "Live Cherri",
+            onLoad: sendConfig,
+            style: {
+              border: 0,
+              width: size,
+              height: size,
+              display: "block",
+              touchAction: "none",
+              backgroundColor: "transparent",
+              pointerEvents: interactive ? "auto" : "none",
+            },
+            sandbox: "allow-scripts allow-same-origin",
+          })
+        ) : (
+          <WebView
+            ref={native}
+            source={source}
+            onLoadEnd={sendConfig}
+            onMessage={onNativeMessage}
+            originWhitelist={["*"]}
+            onShouldStartLoadWithRequest={(r) =>
+              r.url.startsWith("about:blank") || r.url.startsWith("data:")
+            }
+            style={{
+              backgroundColor: "transparent",
+              width: size,
+              height: size,
+            }}
+            scrollEnabled={false}
+            bounces={false}
+            overScrollMode="never"
+            javaScriptEnabled
+            androidLayerType="hardware"
+            pointerEvents={interactive ? "auto" : "none"}
+          />
+        )}
+      </View>
+    );
+  }
 
   const inner = size - 18;
   return (

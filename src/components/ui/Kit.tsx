@@ -20,6 +20,7 @@ import {
   AtmosphericBackground,
   AtmosphericVariant,
 } from "./AtmosphericBackground";
+import { useTabBarInset } from "../navigation/GlassTabBar";
 
 export function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -39,12 +40,17 @@ export function Screen({
   header,
   scrollable = true,
   variant = "calm",
+  contentPaddingBottom,
 }: {
   children: React.ReactNode;
   header?: React.ReactNode;
   scrollable?: boolean;
   variant?: AtmosphericVariant;
+  contentPaddingBottom?: number;
 }) {
+  const defaultBottom = useTabBarInset();
+  const bottomPadding = contentPaddingBottom !== undefined ? contentPaddingBottom : defaultBottom;
+
   return (
     <AtmosphericBackground variant={variant}>
       <SafeAreaView
@@ -72,7 +78,7 @@ export function Screen({
             contentContainerStyle={{
               paddingHorizontal: 20,
               paddingTop: 16,
-              paddingBottom: 110, // Ensure bottom content never gets hidden under floating dock
+              paddingBottom: bottomPadding, // Dynamically clear floating dock + safe insets
               gap: 20,
               width: "100%",
               maxWidth: 540,

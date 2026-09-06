@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useAppStore } from "../store/AppContext";
 import { Screen, Copy, Tap, layout } from "../components/ui/Kit";
-import { GlassCard, GlassOrbFrame } from "../components/ui/Glass";
+import { GlassCard } from "../components/ui/Glass";
 import { CloudPreview } from "../components/character/CloudPreview";
 import { CANONICAL_PRODUCT_STATES } from "../domain/productStates/stateEmotionMap";
 
@@ -22,17 +22,16 @@ export default function Simulator() {
       </View>
 
       <View style={{ alignItems: "center", marginVertical: 6 }}>
-        <GlassOrbFrame size={220}>
-          <CloudPreview
-            size={210}
-            colourId={profile.characterColour}
-            environment={profile.environment}
-            proximityState={proximity.state}
-            driverYaw={
-              direction === "left" ? -0.5 : direction === "right" ? 0.5 : 0
-            }
-          />
-        </GlassOrbFrame>
+        <CloudPreview
+          presentation="hardware"
+          size={220}
+          colourId={profile.characterColour}
+          environment={profile.environment}
+          proximityState={proximity.state}
+          driverYaw={
+            direction === "left" ? -0.5 : direction === "right" ? 0.5 : 0
+          }
+        />
       </View>
 
       <GlassCard>

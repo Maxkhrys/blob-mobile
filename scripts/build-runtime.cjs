@@ -76,10 +76,10 @@ const shadowX={current:new ScalarSpring()},shadowY={current:new ScalarSpring()},
 const staticCanvas=document.createElement('canvas');staticCanvas.width=staticCanvas.height=466;const staticCtx=staticCanvas.getContext('2d');
 const background=document.createElement('canvas');background.width=background.height=466;const backgroundCtx=background.getContext('2d');
 let previous=''; const exports={}; ${config} const active=exports.DEFAULT_ENVIRONMENT;
-return function(ctx,currentRig,dt,time,displayMode,screenColour){const size=466;const key=displayMode+screenColour;if(key!==previous){drawStaticScene(staticCtx,size,displayMode,screenColour);previous=key;}
-backgroundCtx.clearRect(0,0,466,466);backgroundCtx.drawImage(staticCanvas,0,0);
+return function(ctx,currentRig,dt,time,displayMode,screenColour,isIntegrated){const size=466;const key=displayMode+screenColour;if(!isIntegrated&&key!==previous){drawStaticScene(staticCtx,size,displayMode,screenColour);previous=key;}
+backgroundCtx.clearRect(0,0,466,466);if(!isIntegrated){backgroundCtx.drawImage(staticCanvas,0,0);}
 ${shadow}
-if(active.particlesEnabled)for(const mote of MOTES)drawMote(backgroundCtx,mote,time,active.particleSpeed,scenePalette(displayMode),.6);
+if(!isIntegrated&&active.particlesEnabled)for(const mote of MOTES)drawMote(backgroundCtx,mote,time,active.particleSpeed,scenePalette(displayMode),.6);
 backgroundCtx.globalAlpha=1;ctx.save();ctx.globalCompositeOperation='destination-over';ctx.drawImage(background,0,0);ctx.restore();
 };})();`;
 const scene = ts.transpileModule(envSource, {
