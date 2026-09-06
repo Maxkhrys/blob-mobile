@@ -34,7 +34,9 @@ export function ColourSwatchPicker({
   return (
     <View style={[layout.wrap, { gap: 14 }]}>
       {CANONICAL_CLOUD_PRESETS.map((p, i) => {
-        const isSelected = activeColor === ids[i];
+        const isSelected =
+          activeColor === ids[i] ||
+          (ids[i] === "lavender" && (activeColor === "purple-void" || (activeColor as string) === "purple"));
         return (
           <Tap
             key={p.id}

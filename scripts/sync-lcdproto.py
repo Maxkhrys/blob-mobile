@@ -1,7 +1,7 @@
 import subprocess,pathlib,re,json,hashlib
 root=pathlib.Path(__file__).resolve().parents[1]
-repo=root.parent/'LCDPROTO'; sha='95dafb92b5ba87683294698bb7ea89729fd148d4'
-queue=['components/states/EnvironmentLayer.tsx','lib/environmentConfig.ts','components/experimental/cloud-blob/cloudRenderer.ts','components/experimental/cloud-blob/cloudLobeSystem.ts','lib/expressions/coreExpressions.ts','lib/expressions/types.ts','lib/performances/corePerformances.ts','lib/performances/performanceRunner.ts','lib/stateEmotionMap.ts','lib/cloudPresets.ts','lib/deviceStates.ts']
+repo=root.parent/'LCDPROTO'; sha='a46067f44703f32b2f22e6e618b0eb54f71b147e'
+queue=['components/states/EnvironmentLayer.tsx','lib/environmentConfig.ts','components/experimental/cloud-blob/cloudRenderer.ts','components/experimental/cloud-blob/cloudLobeSystem.ts','components/experimental/cloud-blob/cloudPerformance.ts','lib/expressionCatalog.ts','lib/blobDrag.ts','lib/blobPhysics.ts','lib/expressions/coreExpressions.ts','lib/expressions/types.ts','lib/performances/corePerformances.ts','lib/performances/performanceRunner.ts','lib/stateEmotionMap.ts','lib/cloudPresets.ts','lib/deviceStates.ts']
 seen={}
 while queue:
  p=queue.pop()
@@ -17,5 +17,5 @@ while queue:
   if not q.endswith(('.ts','.tsx')): q+='.ts'
   if subprocess.run(['git','-C',str(repo),'cat-file','-e',sha+':'+q],stderr=subprocess.DEVNULL).returncode: q=q[:-3]+'/index.ts'
   queue.append(q)
-(root/'vendor/lcdproto/manifest.json').write_text(json.dumps({'repository':'Maxkhrys/LCDPROTO','branch':'feat/cloud-menu-ui-accents','sha':sha,'files':seen},indent=2)+'\n')
+(root/'vendor/lcdproto/manifest.json').write_text(json.dumps({'repository':'Maxkhrys/LCDPROTO','branch':'feat/cloud-physics-disney-defaults','sha':sha,'files':seen},indent=2)+'\n')
 print('Vendored',len(seen),'unchanged source files')

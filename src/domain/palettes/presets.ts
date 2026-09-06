@@ -70,9 +70,9 @@ export const CANONICAL_CLOUD_PRESETS: CloudColourPreset[] = [
     builtIn: true,
     colour: {
       body: "#c4a5ff",
-      innerGlow: "#8d42ff",
-      edge: "#f0e6ff",
-      coreTint: "#542c8e",
+      innerGlow: "#ac90d5",
+      edge: "#c59ffe",
+      coreTint: "#992fa7",
       glowIntensity: 1.15,
       density: 0.98,
       translucency: 0.8,
@@ -160,7 +160,7 @@ export const CANONICAL_CLOUD_PRESETS: CloudColourPreset[] = [
   },
 ];
 
-export const DEFAULT_CLOUD_PRESET = CANONICAL_CLOUD_PRESETS[1]; // Cloud Blue
+export const DEFAULT_CLOUD_PRESET = CANONICAL_CLOUD_PRESETS[3]; // Purple Void
 
 export function getCloudPresetById(id: string): CloudColourPreset {
   const norm = (id || "").toLowerCase();
@@ -169,7 +169,8 @@ export function getCloudPresetById(id: string): CloudColourPreset {
   if (norm === "blue" || norm === "cloud-blue")
     return CANONICAL_CLOUD_PRESETS[1];
   if (norm === "mint") return CANONICAL_CLOUD_PRESETS[4]; // Emerald Vapor / Mint
-  if (norm === "lavender") return CANONICAL_CLOUD_PRESETS[3]; // Purple Void
+  if (norm === "lavender" || norm === "purple" || norm === "purple-void")
+    return CANONICAL_CLOUD_PRESETS[3]; // Purple Void
   if (norm === "pink") return CANONICAL_CLOUD_PRESETS[5]; // Blush Rose
   if (norm === "peach") return CANONICAL_CLOUD_PRESETS[6]; // Golden Dawn
 

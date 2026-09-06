@@ -307,8 +307,8 @@ function drawFace(ctx: CanvasRenderingContext2D, o: RenderOptions) {
   const pitchSin = Math.sin(pitchRad);
 
   // The face group rides around the surface of the core.
-  const faceTurnX = yawSin * 30;
-  const faceTurnY = pitchSin * 20 - Math.abs(yawSin) * 5;
+  const faceTurnX = -yawSin * 20;
+  const faceTurnY = -pitchSin * 25 - Math.abs(yawSin) * 3;
 
   // The group as a whole is only lightly foreshortened. Perspective is carried
   // by the per-feature projection below; crushing the whole plane on top of it
@@ -327,8 +327,8 @@ function drawFace(ctx: CanvasRenderingContext2D, o: RenderOptions) {
   );
   ctx.rotate(core.rotation * 0.65 + yawSin * 0.08);
   ctx.scale(
-    (1 + (core.scaleX - 1) * 0.56) * faceScale * faceYawWidth,
-    (1 + (core.scaleY - 1) * 0.56) * faceScale * facePitchHeight
+    clamp(1 + (core.scaleX - 1) * 0.3, 0.96, 1.06) * faceScale * faceYawWidth,
+    clamp(1 + (core.scaleY - 1) * 0.3, 0.96, 1.06) * faceScale * facePitchHeight
   );
   ctx.globalAlpha *= faceVisibility;
 
@@ -510,8 +510,8 @@ export function renderCloudBlob(
     }
   }
 
-  const yaw = clamp(p.turnYaw ?? (o.rig.blob.yaw ?? 0), -45, 45);
-  const pitch = clamp(p.turnPitch ?? (o.rig.blob.pitch ?? 0), -30, 30);
+  const yaw = clamp(p.shellYaw ?? p.turnYaw ?? (o.rig.blob.yaw ?? 0), -45, 45);
+  const pitch = clamp(p.shellPitch ?? p.turnPitch ?? (o.rig.blob.pitch ?? 0), -30, 30);
   const yawRad = (yaw * Math.PI) / 180;
   const pitchRad = (pitch * Math.PI) / 180;
   const yawSin = Math.sin(yawRad);
@@ -548,9 +548,6 @@ export function renderCloudBlob(
     // 3D Parallax offset: front lobes rotate with yaw, rear lobes shift opposite
     const parallaxY = depth * pitchSin * 18 - (depth > 0 ? Math.abs(yawSin) * 5 : 0);
 
-    // Whole-body inertial trailing lag (all lobes stay together, NO differential depth tearing)
-    const pullLagX = clamp(-o.vx * 0.02, -14, 14);
-    const pullLagY = clamp(-o.vy * 0.02, -14, 14);
 
     // 2.5D projection. Each lobe carries a cheap z taken from its authored
     // depth tier, and yaw rotates the (x, z) pair about the body axis. That
@@ -565,8 +562,8 @@ export function renderCloudBlob(
     const rotatedZ = -bx * yawSin + bz * yawCos;
     const projectionShift = rotatedX - bx;
 
-    const x = l.x + projectionShift + pullLagX;
-    const y = l.y + parallaxY + pullLagY;
+    const x = l.x + projectionShift;
+    const y = l.y + parallaxY;
 
     // Near lobes read slightly larger and clearer, far ones slightly smaller
     // and denser. Kept gentle: this is depth cueing, not a zoom.

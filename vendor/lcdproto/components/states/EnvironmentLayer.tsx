@@ -30,6 +30,7 @@ const SHADOW_BASE_WIDTH = 233 * BODY_FRACTION * 0.86;
 const SHADOW_BASE_HEIGHT = SHADOW_BASE_WIDTH * 0.17;
 
 interface EnvironmentLayerProps {
+  cloud?: boolean;
   size: number;
   viewportSize?: number;
   renderScale: number;
@@ -218,6 +219,7 @@ function drawShadow(
  * BlobCharacter: the rig remains the only source of character pixels.
  */
 export default function EnvironmentLayer({
+  cloud = false,
   size,
   viewportSize = size,
   renderScale,
@@ -232,6 +234,9 @@ export default function EnvironmentLayer({
   const backgroundRef = useRef<HTMLCanvasElement>(null);
   const foregroundRef = useRef<HTMLCanvasElement>(null);
   const staticSceneRef = useRef<HTMLCanvasElement | null>(null);
+  const cloudRef = useRef(cloud);
+  cloudRef.current = cloud;
+  const previousFoot = useRef<number | null>(null);
   const rigRef = useRef(rig);
   const configRef = useRef(config);
   const statusRef = useRef(onStatus);
@@ -320,6 +325,9 @@ export default function EnvironmentLayer({
       // Subtle lateral ground displacement and spring lag from character lean
       const leanOffset = (currentRig.body.skewX || 0) * 0.28 * wholeScaleX;
       const footX = currentRig.blob.x + (currentRig.body.x + leanOffset) * wholeScaleX;
+      const horizontalSpeed = previousFoot.current === null || delta <= 0 ? 0
+        : Math.abs(footX - previousFoot.current) / (delta / 1000);
+      previousFoot.current = footX;
 
       // 2. Stable Fake Floor-Plane Ground Model with Guaranteed Minimum Visual Gap
       // The floor plane sits at a stable physical altitude in the 466-space scene
@@ -329,7 +337,7 @@ export default function EnvironmentLayer({
       // Belly bottom boundary (dense core underside)
       const bodyUndersideY = coreScreenY + 108 * wholeScaleY;
       // Stable minimum visual gap: the shadow must never visually "kiss" or overlap the body
-      const MIN_VISUAL_GAP = 22 * wholeScaleY;
+      const MIN_VISUAL_GAP = (cloudRef.current ? 7 : 22) * wholeScaleY;
       const minShadowY = bodyUndersideY + MIN_VISUAL_GAP;
       // Floor contact target: stays on the floor plane unless character descends past it
       const targetFloorY = Math.max(FLOOR_REST_Y, minShadowY);
@@ -357,9 +365,11 @@ export default function EnvironmentLayer({
       const stretchComp = 1 - clamp(stretch * 0.25, 0, 0.35);
 
       // Proportional to how wide character actually is
-      const spread = Math.max(0.35, currentRig.body.scaleX * wholeScaleX);
+      const spread = Math.max(0.35, (cloudRef.current
+        ? clamp(1 + bodyDeformX * 0.2, 0.94, 1.12) * (1 + clamp(horizontalSpeed / 5000, 0, 0.06))
+        : currentRig.body.scaleX) * wholeScaleX);
       const shadowScaleX =
-        active.shadowWidth * spread * (heightScale * stretchComp + squash * 1.8);
+        active.shadowWidth * spread * (heightScale * stretchComp + squash * (cloudRef.current ? 0.55 : 1.8));
       const shadowScaleY =
         active.shadowHeight * spread * (heightScale * stretchComp * 0.82 + 0.18);
       const shadowOpacity = clamp(

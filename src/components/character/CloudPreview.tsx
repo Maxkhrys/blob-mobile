@@ -60,11 +60,12 @@ export interface CloudPreviewProps {
   expressionRecipe?: ExpressionRecipe | null;
   debugTelemetry?: boolean;
   presentation?: "hardware" | "integrated";
+  characterScale?: number;
   onTelemetry?: (telemetry: DevLabTelemetry) => void;
 }
 
 export function CloudPreview({
-  colourId = "white",
+  colourId = "purple-void",
   palette,
   emotion = "idle",
   proximityState = "HOME",
@@ -84,6 +85,7 @@ export function CloudPreview({
   expressionRecipe = null,
   debugTelemetry = false,
   presentation = "integrated",
+  characterScale = 0.68,
   onTelemetry,
 }: CloudPreviewProps) {
   const native = useRef<WebView>(null);
@@ -143,6 +145,7 @@ export function CloudPreview({
     debugTelemetry,
     lcdprotoSourceSha: LCDPROTO_SOURCE_SHA,
     presentation,
+    characterScale,
   };
 
   const latest = useRef(config);

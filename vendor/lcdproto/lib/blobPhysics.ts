@@ -176,15 +176,15 @@ export class BlobJellyPhysics {
   }
 
   /** Returned pose object is reused every frame. */
-  update(dtMs: number, target: JellyTarget): JellyPose {
+  update(dtMs: number, target: JellyTarget, cloud = false): JellyPose {
     const seconds = Math.min(Math.max(dtMs, 0), 100) / 1000;
     if (seconds > 0) {
       // Small fixed-ish substeps keep spring response matching at 30 and 60 FPS.
       const steps = Math.max(1, Math.ceil(seconds * 120));
       const dt = seconds / steps;
       for (let i = 0; i < steps; i += 1) {
-        this.x.step(target.x, dt, 2.8, 0.58);
-        this.y.step(target.y, dt, 2.9, 0.56);
+        this.x.step(target.x, dt, cloud ? 4.0 : 2.8, cloud ? 0.86 : 0.58);
+        this.y.step(target.y, dt, cloud ? 4.0 : 2.9, cloud ? 0.86 : 0.56);
         // Depth and turn are deliberately slower than the eye-leading face.
         // That gives a small parallax catch-up without introducing a 3D engine.
         this.depth.step(target.depth, dt, 1.8, 0.66);

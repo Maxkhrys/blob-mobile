@@ -73,10 +73,11 @@ const config = ts.transpileModule(
 ).outputText;
 const envSource = `var Scene=(function(){const BODY_FRACTION=.535;${helpers}
 const shadowX={current:new ScalarSpring()},shadowY={current:new ScalarSpring()},shadowHeight={current:new ScalarSpring()};
+const previousFoot={current:null},cloudRef={current:true};
 const staticCanvas=document.createElement('canvas');staticCanvas.width=staticCanvas.height=466;const staticCtx=staticCanvas.getContext('2d');
 const background=document.createElement('canvas');background.width=background.height=466;const backgroundCtx=background.getContext('2d');
 let previous=''; const exports={}; ${config} const active=exports.DEFAULT_ENVIRONMENT;
-return function(ctx,currentRig,dt,time,displayMode,screenColour,isIntegrated){const size=466;const key=displayMode+screenColour;if(!isIntegrated&&key!==previous){drawStaticScene(staticCtx,size,displayMode,screenColour);previous=key;}
+return function(ctx,currentRig,dt,time,displayMode,screenColour,isIntegrated){const delta=dt*1000;const size=466;const key=displayMode+screenColour;if(!isIntegrated&&key!==previous){drawStaticScene(staticCtx,size,displayMode,screenColour);previous=key;}
 backgroundCtx.clearRect(0,0,466,466);if(!isIntegrated){backgroundCtx.drawImage(staticCanvas,0,0);}
 ${shadow}
 if(!isIntegrated&&active.particlesEnabled)for(const mote of MOTES)drawMote(backgroundCtx,mote,time,active.particleSpeed,scenePalette(displayMode),.6);

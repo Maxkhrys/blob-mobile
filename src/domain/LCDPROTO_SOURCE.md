@@ -5,24 +5,19 @@ This document records the exact upstream LCDPROTO revisions consumed by `blob-mo
 ## Runtime Vendor Source
 
 - **Repository**: `Maxkhrys/LCDPROTO`
-- **Branch**: `feat/cloud-menu-ui-accents`
-- **Commit SHA**: `95dafb92b5ba87683294698bb7ea89729fd148d4`
-- **Commit Date**: `2026-09-05 14:04:20 +0100`
-- **Commit Subject**: `feat(mobile): make simulator and controls fully mobile responsive`
+- **Branch**: `feat/cloud-physics-disney-defaults`
+- **Commit SHA**: `a46067f44703f32b2f22e6e618b0eb54f71b147e`
+- **Commit Date**: `2026-09-06`
+- **Commit Subject**: `feat(cloud): adopt Disney physics pass and tuned production defaults`
 
-This is the correct runtime source for the mobile Cloud. It is not merely a UI-only branch. Its history contains:
-
-- `ddc29e6269074c2b9ac1957b488a5be09020471d` — eyes lead turn, curved face projection, 2.5D lobe depth, core-driven shadow
-- `dfe2ec07a291fdc0c1a05d715df8113c0e712aaa` — shadow floor-gap fix, sticker-squash removal, turn/emote layering
-- `95dafb92b5ba87683294698bb7ea89729fd148d4` — mobile-responsive simulator/control work
-
-LCDPROTO `main` at the Dev Lab implementation point was:
-
-- **Branch**: `main`
-- **Commit SHA**: `bd2460fbc78c1d1e6dfe9cac4b362ddd887df6c3`
-- **Commit Subject**: `feat(cloud): fix shadow floor gap, eliminate sticker squash, and layer 3D turn with emotes`
-
-The runtime vendor branch is richer than this main revision for Cloud turning because it carries the production fix plus the later curved-face / 2.5D turn work on its own branch history.
+This vendor snapshot includes Astra's completed Cloud physics / Disney-motion pass:
+- 18/8 px/s activation hysteresis preventing erratic flutter on micro-movements
+- Bounded acceleration anticipation (`lead()` filter with `tau = 0.08s`)
+- 120Hz substeps for turn spring integration
+- Separately delayed shell yaw/pitch (`0.105` and `0.13`) giving organic jelly follow-through
+- Double wall deformation removed (delegating contact deformation purely to lobe target contact pressure)
+- Directional reversal mist detection bug fixed (preserving `oldVx, oldVy`)
+- Tuned canonical production defaults: character display scale 0.68x, internal cloud size 1.00, Purple Void palette (`#c4a5ff`, `#c59ffe`, `#ac90d5`, `#992fa7`), and canonical deformation parameters.
 
 ## Synchronized Modules & Architectures
 

@@ -189,7 +189,8 @@ export class BlobDragController {
     screen: number,
     blobRadius: number,
     baseX = 0,
-    baseY = 0
+    baseY = 0,
+    cloud = false
   ): DragPose {
     const seconds = clamp(dtMs, 0, 100) / 1000;
     const radiusOfBlob = Math.max(8, blobRadius);
@@ -206,7 +207,7 @@ export class BlobDragController {
     );
     const maxPressedLimit =
       screen * 0.5 -
-      radiusOfBlob * (1 - MAX_NORMAL_COMPRESSION) -
+      radiusOfBlob * (1 - (cloud ? 0.14 : MAX_NORMAL_COMPRESSION)) -
       EDGE_MARGIN;
 
     // Resolve pointer request against a circular boundary. The direction is
@@ -258,8 +259,8 @@ export class BlobDragController {
         } else {
           // Released: momentum is preserved, so he carries on, overshoots his
           // resting place once, and settles.
-          this.posX.step(0, dt, 1.55, 0.44);
-          this.posY.step(0, dt, 1.55, 0.44);
+          this.posX.step(0, dt, cloud ? 1.35 : 1.55, cloud ? 0.78 : 0.44);
+          this.posY.step(0, dt, cloud ? 1.35 : 1.55, cloud ? 0.78 : 0.44);
         }
 
         // A spring can overshoot a target. Resolve that overshoot every
@@ -280,8 +281,8 @@ export class BlobDragController {
             this.posY.velocity -= ny * outwardVelocity;
           }
         }
-        this.wobbleX.step(0, dt, 3.4, 0.3);
-        this.wobbleY.step(0, dt, 3.6, 0.32);
+        this.wobbleX.step(0, dt, 3.4, cloud ? 0.8 : 0.3);
+        this.wobbleY.step(0, dt, 3.6, cloud ? 0.8 : 0.32);
       }
       this.shakeEnergy = Math.max(0, this.shakeEnergy - seconds * 1.6);
     }

@@ -30,21 +30,21 @@ export const DEFAULT_DEFORMATION: CloudDeformationParams = {
   rotation: 0,
   x: 0,
   y: 0,
-  squash: 0,
-  stretch: 0,
-  lean: 0,
-  puff: 0,
+  squash: 0.36,
+  stretch: 0.28,
+  lean: 8.0,
+  puff: 0.40,
   leftBulge: 0,
   rightBulge: 0,
   topBulge: 0,
   bottomSag: 0,
-  coreDensity: 1.15,
-  lobeSoftness: 1.0,
-  faceEmbedDepth: 0.12,
-  fluffiness: 0.8,
-  lightAngle: -135,
-  lightStrength: 0.65,
-  cheekBlush: 0,
+  coreDensity: 1.12,
+  lobeSoftness: 1.05,
+  faceEmbedDepth: 0.17,
+  fluffiness: 1.05,
+  lightAngle: -75,
+  lightStrength: 0.50,
+  cheekBlush: 0.14,
   cloudBrows: false,
   gazeX: 0,
   gazeY: 0,
@@ -62,26 +62,26 @@ export const DEFAULT_MOTION_CONFIG: CloudMotionConfig = {
 };
 
 export const DEFAULT_COLOUR: CloudColourConfig = {
-  body: "#d8e6ff", // soft cool blue-violet mist
-  innerGlow: "#7b94ff", // luminous periwinkle inner glow
-  edge: "#eaf3ff", // ethereal pale cyan rim
-  coreTint: "#627cb5", // darker dense inner core
-  glowIntensity: 1.0,
-  density: 0.95,
-  translucency: 0.82,
+  body: "#c4a5ff",
+  innerGlow: "#ac90d5",
+  edge: "#c59ffe",
+  coreTint: "#992fa7",
+  glowIntensity: 1.15,
+  density: 0.98,
+  translucency: 0.8,
 };
 
 export const COLOUR_PRESETS: Record<string, CloudColourConfig> = {
-  "Cool Mist": DEFAULT_COLOUR,
-  "Purple Void": {
-    body: "#c4a5ff",
-    innerGlow: "#8d42ff",
-    edge: "#f0e6ff",
-    coreTint: "#542c8e",
-    glowIntensity: 1.15,
-    density: 0.98,
-    translucency: 0.8,
+  "Cool Mist": {
+    body: "#d8e6ff", // soft cool blue-violet mist
+    innerGlow: "#7b94ff", // luminous periwinkle inner glow
+    edge: "#eaf3ff", // ethereal pale cyan rim
+    coreTint: "#627cb5", // darker dense inner core
+    glowIntensity: 1.0,
+    density: 0.95,
+    translucency: 0.82,
   },
+  "Purple Void": DEFAULT_COLOUR,
   "Baby Blue": {
     body: "#bce8ff",
     innerGlow: "#36a3f7",
@@ -384,8 +384,8 @@ export function computeLobeTarget(
   targetRotation: number;
 } {
   const puff = params.puff;
-  const squash = params.squash;
-  const stretch = params.stretch;
+  const squash = clamp(params.squash, 0, 0.75);
+  const stretch = clamp(params.stretch, 0, 0.65);
   const lean = params.lean;
 
   let tx = def.baseX;
@@ -417,13 +417,13 @@ export function computeLobeTarget(
 
   if (stretch > 0) {
     if (def.id === "topCrown") {
-      ty -= stretch * 30; // Dome shoots upward
+      ty -= stretch * 18; // Dome shoots upward
     } else if (def.id === "bottomBelly") {
       ty -= stretch * 10; // Belly lifts
     } else if (def.id === "baseLeft" || def.id === "baseRight") {
-      tx *= 1 - stretch * 0.16; // Narrows horizontally
+      tx *= 1 + stretch * 0.04; // Narrows horizontally
     } else if (def.id === "leftCheek" || def.id === "rightCheek") {
-      tx *= 1 - stretch * 0.14;
+      tx *= 1 + stretch * 0.03;
       ty -= stretch * 16;
     }
   }
@@ -465,8 +465,8 @@ export function computeLobeTarget(
   }
 
   // 6. DIRECTIONAL TURNING SILHOUETTE MORPHING (Pseudo-3D volumetric rotation)
-  const turnYaw = params.turnYaw ?? 0;
-  const turnPitch = params.turnPitch ?? 0;
+  const turnYaw = params.shellYaw ?? params.turnYaw ?? 0;
+  const turnPitch = params.shellPitch ?? params.turnPitch ?? 0;
   const yawRatio = clamp(turnYaw / 28, -1, 1);
   const pitchRatio = clamp(turnPitch / 18, -1, 1);
 
@@ -506,7 +506,7 @@ export function computeLobeTarget(
   if (isTrailingX || isTrailingY) directionalLagMod *= 1.35;
 
   const lagStrength = def.lagFactor * motion.lobeLag * 0.09 * directionalLagMod;
-  const maxLobeOffset = def.radiusX * 0.48;
+  const maxLobeOffset = def.radiusX * 0.26;
   const rawLagX = characterVx * lagStrength;
   const rawLagY = characterVy * lagStrength;
   tx -= Math.max(-maxLobeOffset, Math.min(maxLobeOffset, rawLagX));
@@ -525,7 +525,7 @@ export function computeLobeTarget(
   const isCore = def.id === "core" || def.id === "frontVeil";
   // Core preserves chunky spherical volume; trailing rear lobes take on fluid elongation
   const squashFactor = isCore ? 0.22 : (def.depth < 0 ? 1.25 : 0.8);
-  const stretchFactor = isCore ? 0.22 : (def.depth < 0 ? 1.35 : 0.85);
+  const stretchFactor = isCore ? 0.22 : (def.depth < 0 ? 0.5 : 0.65);
 
   if (squash > 0) {
     sx *= 1 + squash * 0.3 * squashFactor;
@@ -546,7 +546,7 @@ export function computeLobeTarget(
         sy *= 1 + Math.abs(yawRatio) * 0.08;
       } else if (yawRatio > 0.05) {
         // Trailing side tucks and compresses (-22%)
-        sx *= 1 - Math.abs(yawRatio) * 0.22;
+        sx *= 1 - Math.abs(yawRatio) * 0.10;
         sy *= 1 - Math.abs(yawRatio) * 0.10;
       }
     } else if (def.id === "rightCheek") {
@@ -556,13 +556,13 @@ export function computeLobeTarget(
         sy *= 1 + Math.abs(yawRatio) * 0.08;
       } else if (yawRatio < -0.05) {
         // Trailing side tucks and compresses (-22%)
-        sx *= 1 - Math.abs(yawRatio) * 0.22;
+        sx *= 1 - Math.abs(yawRatio) * 0.10;
         sy *= 1 - Math.abs(yawRatio) * 0.10;
       }
     } else if (def.id === "baseLeft") {
-      sx *= yawRatio < 0 ? 1 + Math.abs(yawRatio) * 0.10 : 1 - Math.abs(yawRatio) * 0.15;
+      sx *= yawRatio < 0 ? 1 + Math.abs(yawRatio) * 0.10 : 1 - Math.abs(yawRatio) * 0.06;
     } else if (def.id === "baseRight") {
-      sx *= yawRatio > 0 ? 1 + Math.abs(yawRatio) * 0.10 : 1 - Math.abs(yawRatio) * 0.15;
+      sx *= yawRatio > 0 ? 1 + Math.abs(yawRatio) * 0.10 : 1 - Math.abs(yawRatio) * 0.06;
     } else if (def.id === "topCrown") {
       if (pitchRatio < -0.05) {
         sy *= 1 + Math.abs(pitchRatio) * 0.14;
@@ -593,6 +593,34 @@ export function computeLobeTarget(
       sy *= 1 + Math.abs(nvy) * airflowLag * 0.65;
     }
   }
+
+  // Local radial contact. Pressure moves mass out of the normal and into
+  // the tangent, with a protected front cradle and broad shelf throughout.
+  const pressure = clamp(params.contactPressure ?? 0, 0, 1);
+  const angle = params.rotation * Math.PI / 180;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  const wx = params.contactX ?? 0, wy = params.contactY ?? 0;
+  const nx = wx * cos + wy * sin, ny = wy * cos - wx * sin;
+  const projection = def.baseX * nx + def.baseY * ny;
+  const tangent = -def.baseX * ny + def.baseY * nx;
+  const facingWall = clamp(0.5 + projection / 140, 0, 1);
+  const resistance = isCore ? 0.18 : 1;
+  const compression = pressure * facingWall * 0.24 * resistance;
+  const expansion = pressure * (0.09 + facingWall * 0.09) * resistance;
+  tx -= nx * pressure * (8 + facingWall * 17) * resistance;
+  ty -= ny * pressure * (8 + facingWall * 17) * resistance;
+  tx -= ny * tangent * pressure * 0.10 * resistance;
+  ty += nx * tangent * pressure * 0.10 * resistance;
+  sx *= 1 - compression * nx * nx + expansion * ny * ny;
+  sy *= 1 - compression * ny * ny + expansion * nx * nx;
+  // Preserve projected lobe area without undoing intentional inflation.
+  const restArea = breathScale * breathScale * (1 + puff * 0.3) ** 2;
+  const areaCorrection = Math.sqrt(clamp(restArea / Math.max(0.1, sx * sy), 0.86, 1.18));
+  sx *= areaCorrection;
+  sy *= areaCorrection;
+  const shelf = def.depth < 0;
+  sx = clamp(sx, isCore ? 0.93 : shelf ? 0.90 : 0.84, 1.30);
+  sy = clamp(sy, isCore ? 0.93 : 0.82, shelf ? 1.16 : 1.24);
 
   const rot = (lean * 0.38 * (1 - def.lagFactor * 0.45) * Math.PI) / 180;
 
@@ -654,7 +682,9 @@ export function stepLobePhysics(
     );
 
     const stiffness = def.stiffness * (motion.springStiffness / 145);
-    const damping = def.damping * (motion.springDamping / 14.5);
+    // Minimum damping ratio gives one small follow-through, then quiet.
+    const damping = Math.max(def.damping * (motion.springDamping / 14.5),
+      2 * Math.sqrt(stiffness) * (def.depth < 0 ? 0.78 : 0.86));
 
     for (let i = 0; i < steps; i++) {
       // X axis spring

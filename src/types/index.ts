@@ -37,8 +37,15 @@ export interface Driver {
 
 // Character types (Cloud is the exclusive character for V0)
 export type CloudColourId =
-  "white" | "blue" | "pink" | "lavender" | "mint" | "peach" | "cool-mist"
-  | "baby-blue";
+  | "white"
+  | "blue"
+  | "pink"
+  | "lavender"
+  | "mint"
+  | "peach"
+  | "cool-mist"
+  | "baby-blue"
+  | "purple-void";
 
 export interface CloudColourPreset {
   id: CloudColourId;

@@ -16,7 +16,7 @@ export const DEFAULT_USER_PROFILE: UserProfile = {
   username: "Max",
   carName: "Audi",
   characterName: "Lumi",
-  characterColour: "blue",
+  characterColour: "purple-void",
   environment: "zen",
   privacyMode: "friends-only",
   notifications: {
@@ -124,6 +124,11 @@ export class LocalStorageService {
           themeMode: ["system", "light", "dark"].includes(stored.themeMode)
             ? stored.themeMode
             : "system",
+          characterColour:
+            !stored.characterColour ||
+            (!stored.onboardingCompleted && stored.characterColour === "blue")
+              ? "purple-void"
+              : stored.characterColour,
           savedPresets: Array.isArray(stored.savedPresets)
             ? stored.savedPresets
             : [],
