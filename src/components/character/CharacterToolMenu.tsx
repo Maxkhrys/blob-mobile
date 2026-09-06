@@ -14,7 +14,6 @@ import Animated, {
   interpolate,
   type SharedValue,
 } from "react-native-reanimated";
-import Svg, { Path, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { CloudColourId, EnvironmentId, CloudEmotion } from "../../types";
@@ -52,9 +51,10 @@ interface ToolItem {
   angleDeg: number;
 }
 
+// Strictly ordered left-to-right across the upper halo
 const TOOLS: ToolItem[] = [
   { id: "colour", label: "Colour", icon: "color-palette", angleDeg: 200 },
-  { id: "face", label: "Mood", icon: "happy", angleDeg: 235 },
+  { id: "face", label: "Mood", icon: "happy-outline", angleDeg: 235 },
   { id: "character", label: "Studio", icon: "sparkles", angleDeg: 270 },
   { id: "environment", label: "World", icon: "earth", angleDeg: 305 },
   { id: "edit", label: "Lab", icon: "flask", angleDeg: 340 },
@@ -89,7 +89,7 @@ export function CharacterToolMenu({
 }: CharacterToolMenuProps) {
   const router = useRouter();
   const feedback = useFeedback();
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { width: windowWidth } = useWindowDimensions();
 
   const [activeSubmenu, setActiveSubmenu] = useState<CharacterTool | null>(null);
 
@@ -106,7 +106,7 @@ export function CharacterToolMenu({
   const desiredRadius = effectiveStage * 0.58;
   const radius = Math.min(desiredRadius, maxRadiusByWidth);
 
-  // Reanimated shared values for each tool orb (0 = inside, 1 = deployed)
+  // Reanimated shared values for each tool orb (0 = retracted near ring, 1 = deployed)
   const anim0 = useSharedValue(0);
   const anim1 = useSharedValue(0);
   const anim2 = useSharedValue(0);
@@ -117,23 +117,29 @@ export function CharacterToolMenu({
     [anim0, anim1, anim2, anim3, anim4],
   );
 
-  // Spring animation on open/close with 38ms stagger
+  // Staggered spring animations:
+  // Open: 52ms stagger left-to-right (Colour -> Mood -> Studio -> World -> Lab)
+  // Close: 38ms stagger right-to-left (Lab -> World -> Studio -> Mood -> Colour)
   useEffect(() => {
-    const springConfig = {
+    const openSpringConfig = {
       damping: 14,
-      stiffness: 140,
-      mass: 0.85,
+      stiffness: 165,
+      mass: 0.65,
+    };
+    const closeSpringConfig = {
+      damping: 17,
+      stiffness: 210,
+      mass: 0.60,
     };
 
     if (open) {
       anims.forEach((anim, idx) => {
-        anim.value = withDelay(idx * 38, withSpring(1, springConfig));
+        anim.value = withDelay(idx * 52, withSpring(1, openSpringConfig));
       });
     } else {
       anims.forEach((anim, idx) => {
-        // Reverse order on close
         const reverseIdx = anims.length - 1 - idx;
-        anim.value = withDelay(reverseIdx * 25, withSpring(0, springConfig));
+        anim.value = withDelay(reverseIdx * 38, withSpring(0, closeSpringConfig));
       });
     }
   }, [open, anims]);
@@ -141,7 +147,7 @@ export function CharacterToolMenu({
   // If menu is closed, active submenu is suppressed
   const activeToolSubmenu = open ? activeSubmenu : null;
 
-  // Compute tool positions based on explicit angles
+  // Compute tool positions based on explicit left-to-right angles
   const toolPositions = useMemo(() => {
     return TOOLS.map((tool) => {
       const angleRad = (tool.angleDeg * Math.PI) / 180;
@@ -185,48 +191,7 @@ export function CharacterToolMenu({
         },
       ]}
     >
-      {/* 1. Backdrop Touch Dismiss (intercepts outside touches across full screen) */}
-      {open && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Dismiss tool menu"
-          onPress={() => {
-            feedback("tick");
-            setActiveSubmenu(null);
-            onClose();
-          }}
-          style={[
-            StyleSheet.absoluteFill,
-            {
-              top: -windowHeight,
-              bottom: -windowHeight,
-              left: -windowWidth,
-              right: -windowWidth,
-              backgroundColor: "transparent",
-              zIndex: 35,
-            },
-          ]}
-        />
-      )}
-
-      {/* 2. SVG Liquid Metanecks Layer (Metaballs stretching and snapping) */}
-      <View
-        pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { overflow: "visible", zIndex: 38 }]}
-      >
-        {toolPositions.map((pos, idx) => (
-          <LiquidMetaneck
-            key={`metaneck-${pos.tool.id}`}
-            progress={anims[idx]}
-            centre={centre}
-            targetX={pos.targetX}
-            targetY={pos.targetY}
-            orbRadius={orbSize / 2}
-          />
-        ))}
-      </View>
-
-      {/* 3. Character Tool Buttons (Translucent Smoky-Blue Optical Glass Orbs) */}
+      {/* 1. Character Tool Buttons (Crispy Optical Glass Orbs) */}
       {toolPositions.map((pos, idx) => (
         <ToolOrbButton
           key={pos.tool.id}
@@ -241,7 +206,7 @@ export function CharacterToolMenu({
         />
       ))}
 
-      {/* 4. Interactive Submenus (Colour Swatches, Environments, Quick Moods) */}
+      {/* 2. Interactive Submenus (Colour Swatches, Environments, Quick Moods) */}
       {activeToolSubmenu === "colour" && (
         <ColourSubmenu
           centre={centre}
@@ -288,91 +253,7 @@ export function CharacterToolMenu({
 }
 
 // ---------------------------------------------------------------------------
-// Native SVG Liquid Metaneck (Dynamic Bezier metaball neck connecting circles)
-// ---------------------------------------------------------------------------
-function LiquidMetaneck({
-  progress,
-  centre,
-  targetX,
-  targetY,
-  orbRadius,
-}: {
-  progress: SharedValue<number>;
-  centre: number;
-  targetX: number;
-  targetY: number;
-  orbRadius: number;
-}) {
-  const animatedPathProps = useAnimatedStyle(() => {
-    const p = progress.value;
-    if (p < 0.04 || p > 0.68) {
-      return { opacity: 0 };
-    }
-
-    const opacity = interpolate(p, [0.04, 0.22, 0.52, 0.68], [0, 0.85, 0.6, 0]);
-    return { opacity };
-  });
-
-  const angle = Math.atan2(targetY, targetX);
-  const normX = -Math.sin(angle);
-  const normY = Math.cos(angle);
-
-  const charR = orbRadius * 1.8;
-  const startX = centre + Math.cos(angle) * charR;
-  const startY = centre + Math.sin(angle) * charR;
-
-  const midDist = Math.hypot(targetX, targetY) * 0.52;
-  const orbX = centre + Math.cos(angle) * midDist;
-  const orbY = centre + Math.sin(angle) * midDist;
-
-  const spread1 = charR * 0.65;
-  const spread2 = orbRadius * 0.6;
-  const p1x = startX + normX * spread1;
-  const p1y = startY + normY * spread1;
-  const p2x = startX - normX * spread1;
-  const p2y = startY - normY * spread1;
-
-  const p3x = orbX + normX * spread2;
-  const p3y = orbY + normY * spread2;
-  const p4x = orbX - normX * spread2;
-  const p4y = orbY - normY * spread2;
-
-  const pinch = 8;
-  const midX = (startX + orbX) / 2;
-  const midY = (startY + orbY) / 2;
-  const c1x = midX + normX * pinch;
-  const c1y = midY + normY * pinch;
-  const c2x = midX - normX * pinch;
-  const c2y = midY - normY * pinch;
-
-  const d = `M ${p1x} ${p1y} Q ${c1x} ${c1y} ${p3x} ${p3y} L ${p4x} ${p4y} Q ${c2x} ${c2y} ${p2x} ${p2y} Z`;
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[StyleSheet.absoluteFill, animatedPathProps, { overflow: "visible" }]}
-    >
-      <Svg style={{ width: "100%", height: "100%", overflow: "visible" }}>
-        <Defs>
-          <SvgLinearGradient id="metaneckGrad" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor="rgba(255, 255, 255, 0.45)" stopOpacity="0.45" />
-            <Stop offset="0.5" stopColor="rgba(196, 165, 255, 0.32)" stopOpacity="0.32" />
-            <Stop offset="1" stopColor="rgba(140, 180, 255, 0.40)" stopOpacity="0.40" />
-          </SvgLinearGradient>
-        </Defs>
-        <Path
-          d={d}
-          fill="url(#metaneckGrad)"
-          stroke="rgba(255, 255, 255, 0.45)"
-          strokeWidth={0.8}
-        />
-      </Svg>
-    </Animated.View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Optical Glass Orb Tool Button (Translucent Smoky-Blue Glass)
+// Optical Glass Orb Tool Button (Translucent Smoky-Blue Glass Material)
 // ---------------------------------------------------------------------------
 function ToolOrbButton({
   tool,
@@ -395,18 +276,23 @@ function ToolOrbButton({
 }) {
   const animatedStyle = useAnimatedStyle(() => {
     const p = progress.value;
-    const currentX = centre + targetX * p - orbSize / 2;
-    const currentY = centre + targetY * p - orbSize / 2;
 
-    const stretch = interpolate(p, [0, 0.4, 0.85, 1], [0.6, 1.25, 1.06, 1]);
-    const scaleY = interpolate(p, [0, 0.4, 0.85, 1], [0.6, 0.88, 0.98, 1]);
-    const opacity = interpolate(p, [0, 0.08, 1], [0, 1, 1]);
+    // Start near ring edge (~0.70 of radius) and deploy outward along radial path
+    const startRatio = 0.70;
+    const radialRatio = startRatio + (1.0 - startRatio) * p;
+    const currentX = centre + targetX * radialRatio - orbSize / 2;
+    const currentY = centre + targetY * radialRatio - orbSize / 2;
+
+    // Snappy attack, tiny 5% overshoot, quick controlled settle (subtle organic stretch max 5%)
+    const scaleX = interpolate(p, [0, 0.45, 0.82, 1], [0.70, 1.05, 1.05, 1.0]);
+    const scaleY = interpolate(p, [0, 0.45, 0.82, 1], [0.70, 0.97, 1.04, 1.0]);
+    const opacity = interpolate(p, [0, 0.22], [0, 1]);
 
     return {
       transform: [
         { translateX: currentX },
         { translateY: currentY },
-        { scaleX: stretch },
+        { scaleX },
         { scaleY },
       ],
       opacity,
@@ -426,30 +312,35 @@ function ToolOrbButton({
             height: orbSize,
             borderRadius: orbSize / 2,
             borderColor: active
-              ? "rgba(147, 197, 253, 0.95)"
+              ? "rgba(147, 197, 253, 0.85)"
               : pressed
-                ? "rgba(255, 255, 255, 0.70)"
+                ? "rgba(255, 255, 255, 0.65)"
                 : "rgba(255, 255, 255, 0.28)",
             backgroundColor: active
-              ? "rgba(40, 80, 150, 0.60)"
-              : "rgba(22, 32, 54, 0.72)",
-            shadowColor: active ? "#388BFF" : "#0B1528",
-            shadowOpacity: active ? 0.70 : 0.45,
+              ? "rgba(42, 76, 132, 0.68)"
+              : pressed
+                ? "rgba(45, 62, 92, 0.75)"
+                : "rgba(28, 40, 62, 0.62)",
+            shadowColor: active ? "#388BFF" : "#0A1020",
+            shadowOpacity: active ? 0.45 : 0.35,
           },
         ]}
       >
-        {/* Fine top-edge specular highlight */}
+        {/* Subtle inner top glow */}
+        <View pointerEvents="none" style={styles.orbInnerGlow} />
+
+        {/* Crisp specular glare highlight */}
         <View pointerEvents="none" style={styles.orbSpecularGlare} />
 
-        {/* Crisp icon */}
+        {/* Clean, consistently weighted icon */}
         <Ionicons
           name={tool.icon}
-          size={19}
+          size={18}
           color={active ? "#93C5FD" : "#FFFFFF"}
         />
       </Pressable>
 
-      {/* Small white label beneath */}
+      {/* Small crisp white label beneath */}
       <Text
         numberOfLines={1}
         style={[styles.orbLabel, active && styles.orbLabelActive]}
@@ -692,15 +583,24 @@ const styles = StyleSheet.create({
   orbBody: {
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.2,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
+    borderWidth: 1.0,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
+  },
+  orbInnerGlow: {
+    position: "absolute",
+    top: 1,
+    left: 4,
+    right: 4,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
   },
   orbSpecularGlare: {
     position: "absolute",
     top: 3,
-    width: 22,
+    width: 18,
     height: 1.5,
     borderRadius: 1,
     backgroundColor: "rgba(255, 255, 255, 0.65)",
@@ -709,10 +609,10 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "600",
     color: "rgba(255, 255, 255, 0.90)",
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
     marginTop: 4,
     textAlign: "center",
-    textShadowColor: "rgba(0, 0, 0, 0.80)",
+    textShadowColor: "rgba(0, 0, 0, 0.75)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },

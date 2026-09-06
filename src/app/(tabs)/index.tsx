@@ -56,9 +56,22 @@ export default function HomeScreen() {
 
   return (
     <Screen scrollable={false} variant="home" environment={profile.environment}>
-      <View style={styles.homeContentWrapper}>
-        {/* 1. Top Bar: CHERRIPI Title, Hardware Status, Studio Pill & Profile Avatar */}
-        <View>
+      {/* 0. Fullscreen Backdrop Dismiss: intercepts taps outside Cherri and outside tool buttons */}
+      {menuOpen && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss tool menu"
+          onPress={() => {
+            feedback("tick");
+            setMenuOpen(false);
+          }}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+
+      <View style={styles.homeContentWrapper} pointerEvents="box-none">
+        {/* 1. Top Bar: CHERRIPI Title, Hardware Status, Milky Studio Pill & Profile Avatar */}
+        <View pointerEvents="box-none">
           <View style={layout.between}>
             <View style={{ gap: 2 }}>
               <Text style={styles.brandTitle}>CHERRIPI</Text>
@@ -89,7 +102,7 @@ export default function HomeScreen() {
                 <Text style={styles.studioPillText}>Studio</Text>
               </Pressable>
 
-              {/* User Profile Avatar with fine glass rim */}
+              {/* User Profile Avatar with fine translucent glass rim */}
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Your profile"
@@ -109,12 +122,13 @@ export default function HomeScreen() {
         </View>
 
         {/* 2. Hero Centerpiece: Dedicated Interaction Stage for Glass Orb + Liquid Tool Menu */}
-        <View style={styles.heroSection}>
+        <View style={styles.heroSection} pointerEvents="box-none">
           <View
             style={[
               styles.interactionStage,
               { width: previewSize, height: previewSize },
             ]}
+            pointerEvents="box-none"
           >
             {/* Optical Glass Lens Sphere holding Live Interactive Cherri */}
             <GlassOrbFrame size={previewSize} environment={profile.environment}>
@@ -150,7 +164,7 @@ export default function HomeScreen() {
               />
             </GlassOrbFrame>
 
-            {/* Liquid / Gooey Double-Tap Character Halo Menu */}
+            {/* Character Halo Tool Menu (buttons stay anchored to stage, not chasing Cherri) */}
             <CharacterToolMenu
               open={menuOpen}
               onClose={() => setMenuOpen(false)}
@@ -167,8 +181,8 @@ export default function HomeScreen() {
         </View>
 
         {/* 3. Dynamic Narrative Status & Drag Instruction (Safely above floating dock) */}
-        <View style={styles.narrativeSection}>
-          <View style={styles.narrativeHeaderRow}>
+        <View style={styles.narrativeSection} pointerEvents="box-none">
+          <View style={styles.narrativeHeaderRow} pointerEvents="box-none">
             <Text numberOfLines={1} style={styles.narrativeTitle}>
               {title}
             </Text>
@@ -220,16 +234,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(100, 160, 255, 0.28)",
-    borderColor: "rgba(255, 255, 255, 0.45)",
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    borderColor: "rgba(255, 255, 255, 0.35)",
     borderWidth: 1,
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    shadowColor: "#388BFF",
-    shadowOpacity: 0.35,
+    shadowColor: "#000000",
+    shadowOpacity: 0.18,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
   },
   studioPillText: {
     color: "#FFFFFF",
@@ -238,13 +252,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   avatarWrapper: {
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.45)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.30)",
     borderRadius: 20,
-    padding: 1,
+    padding: 1.5,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     shadowColor: "#000000",
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
   mottoContainer: {
     alignSelf: "flex-end",

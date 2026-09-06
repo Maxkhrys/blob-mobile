@@ -54,8 +54,8 @@ export function GlassTabBar({ state, descriptors, navigation }: GlassTabBarProps
         style={[
           styles.dockContainer,
           {
-            backgroundColor: "rgba(20, 28, 50, 0.48)",
-            borderColor: "rgba(255, 255, 255, 0.22)",
+            backgroundColor: "rgba(24, 34, 56, 0.40)",
+            borderColor: "rgba(255, 255, 255, 0.28)",
             shadowColor: "#000000",
           },
         ]}
@@ -63,7 +63,7 @@ export function GlassTabBar({ state, descriptors, navigation }: GlassTabBarProps
         {/* Top subtle inner specular highlight */}
         <View
           pointerEvents="none"
-          style={[styles.dockHighlight, { borderColor: "rgba(255, 255, 255, 0.35)" }]}
+          style={[styles.dockHighlight, { borderColor: "rgba(255, 255, 255, 0.42)" }]}
         />
 
         {state.routes.map((route, index) => {

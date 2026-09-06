@@ -11,12 +11,9 @@ import {
   TextInputProps,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Image as ExpoImage } from "expo-image";
 import { useTheme, Radius } from "../../constants/theme";
 import { useFeedback } from "../../services/feedback/FeedbackProvider";
 import { useReducedMotion } from "./Kit";
-
-const RING_IMAGE = require("../../../assets/images/ring-glass.png");
 
 // ---------------------------------------------------------------------------
 // 1. GlassSurface: Translucent frosted glass panel with fine white edge
@@ -530,65 +527,17 @@ export function GlassOrbFrame({
       {/* 1. Live Interactive Cloud Character (Canvas receiving touches) */}
       {children}
 
-      {/* 2. OPTICAL GLASS LENS OVERLAYS (All pointerEvents="none") */}
-      {/* 2A. Soft outer atmospheric sky bloom */}
+      {/* 2. Single Subtle Optical Glass Border (thin, soft, barely there) */}
       <View
         pointerEvents="none"
         style={[
-          styles.ringAtmosphericBloom,
-          {
-            width: size * 0.96,
-            height: size * 0.96,
-            borderRadius: (size * 0.96) / 2,
-            top: size * 0.02,
-            left: size * 0.02,
-          },
-        ]}
-      />
-
-      {/* 2B. Consistent razor-thin 360° optical glass edge highlight */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.ringCircularOpticalEdge,
-          {
-            width: size * 0.95,
-            height: size * 0.95,
-            borderRadius: (size * 0.95) / 2,
-            top: size * 0.025,
-            left: size * 0.025,
-          },
-        ]}
-      />
-
-      {/* 2C. Subtle concentric ice-blue refraction edge */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.ringConcentricRefraction,
-          {
-            width: size * 0.925,
-            height: size * 0.925,
-            borderRadius: (size * 0.925) / 2,
-            top: size * 0.0375,
-            left: size * 0.0375,
-          },
-        ]}
-      />
-
-      {/* 2D. Dedicated High-Res Apple Vision Pro Glass Ring Asset */}
-      <ExpoImage
-        source={RING_IMAGE}
-        style={[
-          styles.ringOverlayImage,
+          styles.opticalGlassEdge,
           {
             width: size,
             height: size,
+            borderRadius: size / 2,
           },
         ]}
-        contentFit="contain"
-        pointerEvents="none"
-        priority="high"
       />
     </View>
   );
@@ -678,31 +627,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
   },
-  ringAtmosphericBloom: {
-    position: "absolute",
-    borderWidth: 1,
-    borderColor: "rgba(142, 181, 255, 0.18)",
-    backgroundColor: "transparent",
-    shadowColor: "#8EB5FF",
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
-    elevation: 2,
-  },
-  ringCircularOpticalEdge: {
-    position: "absolute",
-    borderWidth: 0.8,
-    borderColor: "rgba(255, 255, 255, 0.38)",
-    backgroundColor: "transparent",
-  },
-  ringConcentricRefraction: {
-    position: "absolute",
-    borderWidth: 0.5,
-    borderColor: "rgba(196, 225, 255, 0.24)",
-    backgroundColor: "transparent",
-  },
-  ringOverlayImage: {
+  opticalGlassEdge: {
     position: "absolute",
     top: 0,
     left: 0,
+    borderWidth: 1.0,
+    borderColor: "rgba(255, 255, 255, 0.30)",
+    shadowColor: "#8EB5FF",
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    elevation: 2,
   },
 });
