@@ -355,6 +355,58 @@ export default function SettingsScreen() {
             })}
           </View>
         </View>
+
+        {/* Home Play Area Size Selector */}
+        <View style={{ gap: 8, marginTop: 14 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={styles.subLabel}>Home Play Area Size</Text>
+            <Text style={styles.subValue}>
+              {((profile.homePlayAreaScale ?? 1.0) * 100).toFixed(0)}%
+            </Text>
+          </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {[
+              { label: "Compact", scale: 0.9, caption: "0.90x" },
+              { label: "Default", scale: 1.0, caption: "1.00x" },
+              { label: "Large", scale: 1.1, caption: "1.10x" },
+            ].map((item) => {
+              const currentScale = profile.homePlayAreaScale ?? 1.0;
+              const isSelected = Math.abs(currentScale - item.scale) < 0.04;
+              return (
+                <Pressable
+                  key={item.label}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Set play area size to ${item.label}`}
+                  onPress={() => {
+                    feedback("tick");
+                    updateProfile({ homePlayAreaScale: item.scale });
+                  }}
+                  style={[
+                    styles.playAreaChip,
+                    isSelected && styles.playAreaChipSelected,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.playAreaChipText,
+                      isSelected && styles.playAreaChipTextSelected,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.playAreaChipSubtext,
+                      isSelected && styles.playAreaChipSubtextSelected,
+                    ]}
+                  >
+                    {item.caption}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
       </GlassCard>
 
       {/* 5. Notifications */}
@@ -743,6 +795,39 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "rgba(240, 244, 252, 0.50)",
     marginTop: 1,
+  },
+  playAreaChip: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  },
+  playAreaChipSelected: {
+    backgroundColor: "rgba(56, 139, 255, 0.22)",
+    borderColor: "#388BFF",
+  },
+  playAreaChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "rgba(240, 244, 252, 0.70)",
+  },
+  playAreaChipTextSelected: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  playAreaChipSubtext: {
+    fontSize: 10,
+    color: "rgba(240, 244, 252, 0.45)",
+  },
+  playAreaChipSubtextSelected: {
+    color: "#93C5FD",
+    fontWeight: "600",
   },
   versionFooter: {
     textAlign: "center",

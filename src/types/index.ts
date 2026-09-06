@@ -144,4 +144,5 @@ export interface UserProfile {
   privacyMode: PrivacyMode;
   notifications: NotificationPreferences;
   onboardingCompleted: boolean;
+  homePlayAreaScale?: number;
 }

@@ -17,7 +17,7 @@ import Animated, {
 import Svg, { Path, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { CloudColourId, EnvironmentId } from "../../types";
+import { CloudColourId, EnvironmentId, CloudEmotion } from "../../types";
 import { CANONICAL_ENVIRONMENTS } from "../../domain/environments/presets";
 import { useFeedback } from "../../services/feedback/FeedbackProvider";
 
@@ -28,55 +28,83 @@ export type CharacterTool =
   | "environment"
   | "edit";
 
+export interface MoodPreset {
+  id: "CALM" | "HAPPY" | "CURIOUS" | "FOCUSED" | "SLEEPY";
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  behaviour: string;
+  emotion: CloudEmotion;
+  tagline: string;
+}
+
+export const MOOD_PRESETS: MoodPreset[] = [
+  { id: "CALM", label: "Calm", icon: "leaf-outline", behaviour: "FLOAT_DRIFT", emotion: "idle", tagline: "Breathing rest" },
+  { id: "HAPPY", label: "Happy", icon: "happy-outline", behaviour: "HAPPY_BOUNCE", emotion: "happy", tagline: "Joyful bounce" },
+  { id: "CURIOUS", label: "Curious", icon: "search-outline", behaviour: "CURIOUS_DOUBLE_TAKE", emotion: "curious", tagline: "Double take" },
+  { id: "FOCUSED", label: "Focused", icon: "flash-outline", behaviour: "NOD_YES", emotion: "idle", tagline: "Attentive nod" },
+  { id: "SLEEPY", label: "Sleepy", icon: "moon-outline", behaviour: "SLEEPY_YAWN", emotion: "sleepy", tagline: "Gentle yawn" },
+];
+
 interface ToolItem {
   id: CharacterTool;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
+  angleDeg: number;
 }
 
 const TOOLS: ToolItem[] = [
-  { id: "colour", label: "Colour", icon: "color-palette" },
-  { id: "face", label: "Mood", icon: "happy" },
-  { id: "character", label: "Studio", icon: "sparkles" },
-  { id: "environment", label: "World", icon: "earth" },
-  { id: "edit", label: "Lab", icon: "flask" },
+  { id: "colour", label: "Colour", icon: "color-palette", angleDeg: 200 },
+  { id: "face", label: "Mood", icon: "happy", angleDeg: 235 },
+  { id: "character", label: "Studio", icon: "sparkles", angleDeg: 270 },
+  { id: "environment", label: "World", icon: "earth", angleDeg: 305 },
+  { id: "edit", label: "Lab", icon: "flask", angleDeg: 340 },
 ];
-
-const ARC_START = 205; // degrees (upper left)
-const ARC_END = 335;   // degrees (upper right)
 
 interface CharacterToolMenuProps {
   open: boolean;
   onClose: () => void;
-  screenSize: number;
+  stageSize?: number;
+  screenSize?: number;
   colourId?: CloudColourId;
   onColourChange?: (colour: CloudColourId) => void;
   environment?: EnvironmentId;
   onEnvironmentChange?: (env: EnvironmentId) => void;
   onTriggerExpression?: (id: string) => void;
+  onMoodSelect?: (mood: MoodPreset) => void;
+  currentMoodId?: string;
 }
 
 export function CharacterToolMenu({
   open,
   onClose,
+  stageSize,
   screenSize,
   colourId = "purple-void",
   onColourChange,
   environment = "scenic",
   onEnvironmentChange,
   onTriggerExpression,
+  onMoodSelect,
+  currentMoodId = "CALM",
 }: CharacterToolMenuProps) {
   const router = useRouter();
   const feedback = useFeedback();
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   const [activeSubmenu, setActiveSubmenu] = useState<CharacterTool | null>(null);
 
   // Geometric center & radii
-  const centre = screenSize / 2;
+  const effectiveStage = stageSize || screenSize || 300;
+  const centre = effectiveStage / 2;
   const orbSize = 44;
-  const radius = Math.min(windowWidth * 0.38, screenSize * 0.52);
-  const angleStep = (ARC_END - ARC_START) / (TOOLS.length - 1);
+
+  // Arc angles: 200, 235, 270, 305, 340.
+  // Maximum horizontal offset from center occurs at 200° and 340°: cos(200°) = -0.93969.
+  // Ensure the outer edge stays safely within screen margin:
+  const maxRadiusByWidth =
+    (windowWidth / 2 - orbSize / 2 - 16) / Math.abs(Math.cos((200 * Math.PI) / 180));
+  const desiredRadius = effectiveStage * 0.58;
+  const radius = Math.min(desiredRadius, maxRadiusByWidth);
 
   // Reanimated shared values for each tool orb (0 = inside, 1 = deployed)
   const anim0 = useSharedValue(0);
@@ -84,7 +112,10 @@ export function CharacterToolMenu({
   const anim2 = useSharedValue(0);
   const anim3 = useSharedValue(0);
   const anim4 = useSharedValue(0);
-  const anims = useMemo(() => [anim0, anim1, anim2, anim3, anim4], [anim0, anim1, anim2, anim3, anim4]);
+  const anims = useMemo(
+    () => [anim0, anim1, anim2, anim3, anim4],
+    [anim0, anim1, anim2, anim3, anim4],
+  );
 
   // Spring animation on open/close with 38ms stagger
   useEffect(() => {
@@ -110,16 +141,15 @@ export function CharacterToolMenu({
   // If menu is closed, active submenu is suppressed
   const activeToolSubmenu = open ? activeSubmenu : null;
 
-  // Compute tool positions
+  // Compute tool positions based on explicit angles
   const toolPositions = useMemo(() => {
-    return TOOLS.map((tool, idx) => {
-      const angleDeg = ARC_START + angleStep * idx;
-      const angleRad = (angleDeg * Math.PI) / 180;
+    return TOOLS.map((tool) => {
+      const angleRad = (tool.angleDeg * Math.PI) / 180;
       const targetX = Math.cos(angleRad) * radius;
       const targetY = Math.sin(angleRad) * radius;
       return { tool, angleRad, targetX, targetY };
     });
-  }, [radius, angleStep]);
+  }, [radius]);
 
   const handleToolPress = (toolId: CharacterTool) => {
     feedback("tick");
@@ -143,33 +173,47 @@ export function CharacterToolMenu({
   }
 
   return (
-    <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { zIndex: 40 }]}>
-      {/* 1. Backdrop Touch Dismiss (only intercepts touches outside tool buttons) */}
-      <Pressable
-        onPress={() => {
-          feedback("tick");
-          setActiveSubmenu(null);
-          onClose();
-        }}
-        style={StyleSheet.absoluteFill}
-      />
+    <View
+      pointerEvents="box-none"
+      style={[
+        StyleSheet.absoluteFill,
+        {
+          width: effectiveStage,
+          height: effectiveStage,
+          overflow: "visible",
+          zIndex: 40,
+        },
+      ]}
+    >
+      {/* 1. Backdrop Touch Dismiss (intercepts outside touches across full screen) */}
+      {open && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss tool menu"
+          onPress={() => {
+            feedback("tick");
+            setActiveSubmenu(null);
+            onClose();
+          }}
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              top: -windowHeight,
+              bottom: -windowHeight,
+              left: -windowWidth,
+              right: -windowWidth,
+              backgroundColor: "transparent",
+              zIndex: 35,
+            },
+          ]}
+        />
+      )}
 
       {/* 2. SVG Liquid Metanecks Layer (Metaballs stretching and snapping) */}
-      <Svg
+      <View
         pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          { width: screenSize, height: screenSize },
-        ]}
+        style={[StyleSheet.absoluteFill, { overflow: "visible", zIndex: 38 }]}
       >
-        <Defs>
-          <SvgLinearGradient id="metaneckGrad" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor="rgba(255, 255, 255, 0.45)" stopOpacity="0.45" />
-            <Stop offset="0.5" stopColor="rgba(196, 165, 255, 0.32)" stopOpacity="0.32" />
-            <Stop offset="1" stopColor="rgba(140, 180, 255, 0.40)" stopOpacity="0.40" />
-          </SvgLinearGradient>
-        </Defs>
-
         {toolPositions.map((pos, idx) => (
           <LiquidMetaneck
             key={`metaneck-${pos.tool.id}`}
@@ -180,9 +224,9 @@ export function CharacterToolMenu({
             orbRadius={orbSize / 2}
           />
         ))}
-      </Svg>
+      </View>
 
-      {/* 3. Character Tool Buttons (Optical Glass Orbs) */}
+      {/* 3. Character Tool Buttons (Translucent Smoky-Blue Optical Glass Orbs) */}
       {toolPositions.map((pos, idx) => (
         <ToolOrbButton
           key={pos.tool.id}
@@ -223,12 +267,14 @@ export function CharacterToolMenu({
       )}
 
       {activeToolSubmenu === "face" && (
-        <FaceSubmenu
+        <MoodSubmenu
           centre={centre}
           radius={radius}
-          onTrigger={(exprId) => {
+          currentMoodId={currentMoodId}
+          onSelectMood={(mood) => {
             feedback("success");
-            onTriggerExpression?.(exprId);
+            onMoodSelect?.(mood);
+            onTriggerExpression?.(mood.behaviour);
           }}
           onOpenStudio={() => {
             setActiveSubmenu(null);
@@ -259,7 +305,6 @@ function LiquidMetaneck({
 }) {
   const animatedPathProps = useAnimatedStyle(() => {
     const p = progress.value;
-    // When snapped (p > 0.68) or at rest (p < 0.05), neck is retracted/invisible
     if (p < 0.04 || p > 0.68) {
       return { opacity: 0 };
     }
@@ -268,24 +313,20 @@ function LiquidMetaneck({
     return { opacity };
   });
 
-  // Calculate static path for peak stretch
   const angle = Math.atan2(targetY, targetX);
   const normX = -Math.sin(angle);
   const normY = Math.cos(angle);
 
-  // Character anchor
   const charR = orbRadius * 1.8;
   const startX = centre + Math.cos(angle) * charR;
   const startY = centre + Math.sin(angle) * charR;
 
-  // Mid orb position during stretch
   const midDist = Math.hypot(targetX, targetY) * 0.52;
   const orbX = centre + Math.cos(angle) * midDist;
   const orbY = centre + Math.sin(angle) * midDist;
 
-  // Tangents
   const spread1 = charR * 0.65;
-  const spread2 = orbRadius * 0.60;
+  const spread2 = orbRadius * 0.6;
   const p1x = startX + normX * spread1;
   const p1y = startY + normY * spread1;
   const p2x = startX - normX * spread1;
@@ -296,7 +337,6 @@ function LiquidMetaneck({
   const p4x = orbX - normX * spread2;
   const p4y = orbY - normY * spread2;
 
-  // Inward pinch control points
   const pinch = 8;
   const midX = (startX + orbX) / 2;
   const midY = (startY + orbY) / 2;
@@ -308,16 +348,31 @@ function LiquidMetaneck({
   const d = `M ${p1x} ${p1y} Q ${c1x} ${c1y} ${p3x} ${p3y} L ${p4x} ${p4y} Q ${c2x} ${c2y} ${p2x} ${p2y} Z`;
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, animatedPathProps]}>
-      <Svg style={StyleSheet.absoluteFill}>
-        <Path d={d} fill="url(#metaneckGrad)" stroke="rgba(255, 255, 255, 0.45)" strokeWidth={0.8} />
+    <Animated.View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, animatedPathProps, { overflow: "visible" }]}
+    >
+      <Svg style={{ width: "100%", height: "100%", overflow: "visible" }}>
+        <Defs>
+          <SvgLinearGradient id="metaneckGrad" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor="rgba(255, 255, 255, 0.45)" stopOpacity="0.45" />
+            <Stop offset="0.5" stopColor="rgba(196, 165, 255, 0.32)" stopOpacity="0.32" />
+            <Stop offset="1" stopColor="rgba(140, 180, 255, 0.40)" stopOpacity="0.40" />
+          </SvgLinearGradient>
+        </Defs>
+        <Path
+          d={d}
+          fill="url(#metaneckGrad)"
+          stroke="rgba(255, 255, 255, 0.45)"
+          strokeWidth={0.8}
+        />
       </Svg>
     </Animated.View>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Optical Glass Orb Tool Button
+// Optical Glass Orb Tool Button (Translucent Smoky-Blue Glass)
 // ---------------------------------------------------------------------------
 function ToolOrbButton({
   tool,
@@ -343,7 +398,6 @@ function ToolOrbButton({
     const currentX = centre + targetX * p - orbSize / 2;
     const currentY = centre + targetY * p - orbSize / 2;
 
-    // Organic directional stretch during peel
     const stretch = interpolate(p, [0, 0.4, 0.85, 1], [0.6, 1.25, 1.06, 1]);
     const scaleY = interpolate(p, [0, 0.4, 0.85, 1], [0.6, 0.88, 0.98, 1]);
     const opacity = interpolate(p, [0, 0.08, 1], [0, 1, 1]);
@@ -372,31 +426,34 @@ function ToolOrbButton({
             height: orbSize,
             borderRadius: orbSize / 2,
             borderColor: active
-              ? "#388BFF"
+              ? "rgba(147, 197, 253, 0.95)"
               : pressed
-                ? "rgba(255, 255, 255, 0.75)"
-                : "rgba(255, 255, 255, 0.38)",
+                ? "rgba(255, 255, 255, 0.70)"
+                : "rgba(255, 255, 255, 0.28)",
             backgroundColor: active
-              ? "rgba(56, 139, 255, 0.28)"
-              : "rgba(22, 32, 54, 0.62)",
-            shadowColor: active ? "#388BFF" : "#60A5FA",
-            shadowOpacity: active ? 0.65 : 0.35,
+              ? "rgba(40, 80, 150, 0.60)"
+              : "rgba(22, 32, 54, 0.72)",
+            shadowColor: active ? "#388BFF" : "#0B1528",
+            shadowOpacity: active ? 0.70 : 0.45,
           },
         ]}
       >
-        {/* Top-left specular glare highlight */}
+        {/* Fine top-edge specular highlight */}
         <View pointerEvents="none" style={styles.orbSpecularGlare} />
 
-        {/* Crisp vector icon */}
+        {/* Crisp icon */}
         <Ionicons
           name={tool.icon}
-          size={20}
+          size={19}
           color={active ? "#93C5FD" : "#FFFFFF"}
         />
       </Pressable>
 
-      {/* Floating subtle label */}
-      <Text style={[styles.orbLabel, active && { color: "#93C5FD", fontWeight: "700" }]}>
+      {/* Small white label beneath */}
+      <Text
+        numberOfLines={1}
+        style={[styles.orbLabel, active && styles.orbLabelActive]}
+      >
         {tool.label}
       </Text>
     </Animated.View>
@@ -441,7 +498,7 @@ function ColourSubmenu({
       style={[
         styles.submenuContainer,
         {
-          top: centre - radius * 0.35,
+          top: centre - radius * 0.38,
           left: 14,
           right: 14,
         },
@@ -501,7 +558,7 @@ function EnvironmentSubmenu({
       style={[
         styles.submenuContainer,
         {
-          top: centre - radius * 0.35,
+          top: centre - radius * 0.38,
           left: 14,
           right: 14,
         },
@@ -541,24 +598,19 @@ function EnvironmentSubmenu({
 }
 
 // ---------------------------------------------------------------------------
-// Quick Mood / Face Reaction Submenu
+// Budding 5-Mood Submenu (Calm, Happy, Curious, Focused, Sleepy)
 // ---------------------------------------------------------------------------
-const QUICK_MOODS = [
-  { id: "JOY_HOP", label: "Happy", icon: "happy" as const },
-  { id: "EXCITED_WIGGLE", label: "Playful", icon: "sparkles" as const },
-  { id: "CURIOUS_DOUBLE_TAKE", label: "Curious", icon: "search" as const },
-  { id: "SLEEPY_YAWN", label: "Calm", icon: "moon" as const },
-];
-
-function FaceSubmenu({
+function MoodSubmenu({
   centre,
   radius,
-  onTrigger,
+  currentMoodId,
+  onSelectMood,
   onOpenStudio,
 }: {
   centre: number;
   radius: number;
-  onTrigger: (id: string) => void;
+  currentMoodId?: string;
+  onSelectMood: (mood: MoodPreset) => void;
   onOpenStudio: () => void;
 }) {
   return (
@@ -566,33 +618,61 @@ function FaceSubmenu({
       style={[
         styles.submenuContainer,
         {
-          top: centre - radius * 0.35,
+          top: centre - radius * 0.38,
           left: 14,
           right: 14,
         },
       ]}
     >
       <View style={styles.submenuCard}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <Text style={styles.submenuTitle}>Quick Mood</Text>
-          <Pressable onPress={onOpenStudio} style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-            <Text style={{ fontSize: 11, color: "#60A5FA", fontWeight: "600" }}>Studio</Text>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <Text style={styles.submenuTitle}>Cherri Mood</Text>
+          <Pressable
+            onPress={onOpenStudio}
+            style={{ flexDirection: "row", alignItems: "center", gap: 3 }}
+          >
+            <Text style={{ fontSize: 11, color: "#60A5FA", fontWeight: "600" }}>
+              Studio
+            </Text>
             <Ionicons name="chevron-forward" size={12} color="#60A5FA" />
           </Pressable>
         </View>
         <View style={styles.moodRow}>
-          {QUICK_MOODS.map((m) => (
-            <Pressable
-              key={m.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Trigger ${m.label}`}
-              onPress={() => onTrigger(m.id)}
-              style={styles.moodReactionChip}
-            >
-              <Ionicons name={m.icon} size={15} color="#FFFFFF" />
-              <Text style={styles.moodChipText}>{m.label}</Text>
-            </Pressable>
-          ))}
+          {MOOD_PRESETS.map((m) => {
+            const isSelected = currentMoodId === m.id;
+            return (
+              <Pressable
+                key={m.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Mood: ${m.label}`}
+                onPress={() => onSelectMood(m)}
+                style={[
+                  styles.moodReactionChip,
+                  isSelected && styles.moodReactionChipSelected,
+                ]}
+              >
+                <Ionicons
+                  name={m.icon}
+                  size={15}
+                  color={isSelected ? "#93C5FD" : "#FFFFFF"}
+                />
+                <Text
+                  style={[
+                    styles.moodChipText,
+                    isSelected && styles.moodChipTextSelected,
+                  ]}
+                >
+                  {m.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
     </View>
@@ -604,6 +684,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     top: 0,
+    width: 56,
+    marginLeft: -6, // Centers 56px wide container on 44px orb
     alignItems: "center",
     zIndex: 50,
   },
@@ -612,6 +694,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1.2,
     shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 6,
   },
   orbSpecularGlare: {
@@ -620,17 +703,22 @@ const styles = StyleSheet.create({
     width: 22,
     height: 1.5,
     borderRadius: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.70)",
+    backgroundColor: "rgba(255, 255, 255, 0.65)",
   },
   orbLabel: {
-    fontSize: 9.5,
+    fontSize: 10,
     fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.85)",
-    letterSpacing: 0.8,
+    color: "rgba(255, 255, 255, 0.90)",
+    letterSpacing: 0.4,
     marginTop: 4,
-    textShadowColor: "rgba(0, 0, 0, 0.65)",
+    textAlign: "center",
+    textShadowColor: "rgba(0, 0, 0, 0.80)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  orbLabelActive: {
+    color: "#93C5FD",
+    fontWeight: "700",
   },
   submenuContainer: {
     position: "absolute",
@@ -640,7 +728,7 @@ const styles = StyleSheet.create({
   submenuCard: {
     width: "100%",
     maxWidth: 340,
-    backgroundColor: "rgba(18, 26, 44, 0.82)",
+    backgroundColor: "rgba(18, 26, 44, 0.84)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.22)",
     borderRadius: 20,
@@ -723,15 +811,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 5,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 12,
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.14)",
   },
+  moodReactionChipSelected: {
+    backgroundColor: "rgba(56, 139, 255, 0.28)",
+    borderColor: "#388BFF",
+  },
   moodChipText: {
     fontSize: 11,
-    color: "#FFFFFF",
+    color: "rgba(255, 255, 255, 0.85)",
     fontWeight: "600",
+  },
+  moodChipTextSelected: {
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
 });

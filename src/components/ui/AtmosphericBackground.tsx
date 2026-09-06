@@ -54,11 +54,13 @@ export function AtmosphericBackground({
     return (
       <View style={[styles.container, style]}>
         <ExpoImage
+          key={`bg-img-light-${isBgB ? "b" : "a"}`}
           source={scenicSource}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
           priority="high"
           cachePolicy="memory-disk"
+          transition={250}
         />
         <LinearGradient
           colors={lightScrimColors}
@@ -150,11 +152,13 @@ export function AtmosphericBackground({
     <View style={[styles.container, style]}>
       {/* 1. High-Resolution Atmospheric Sunset Vista Wallpaper */}
       <ExpoImage
+        key={`bg-img-dark-${isBgB ? "b" : "a"}`}
         source={scenicSource}
         style={StyleSheet.absoluteFill}
         contentFit="cover"
         priority="high"
         cachePolicy="memory-disk"
+        transition={250}
       />
 
       {/* 2. Tuned Glass Scrim Gradient for pristine readability and dock elevation */}

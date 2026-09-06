@@ -517,10 +517,6 @@ export function GlassOrbFrame({
   environment?: string;
   children: React.ReactNode;
 }) {
-  const envNorm = (environment || "scenic").toLowerCase();
-  const isSand = envNorm === "zen" || envNorm === "sand" || envNorm === "warm-stone";
-  const isDark = envNorm === "dark" || envNorm === "amoled" || envNorm === "sky";
-
   return (
     <View
       style={{
@@ -531,75 +527,56 @@ export function GlassOrbFrame({
         position: "relative",
       }}
     >
-      {/* 1. BACK OPTICAL LAYER: Environment-aware soft diffuse ground pad (behind character & shadow) */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.softGroundGlowContainer,
-          {
-            width: size,
-            height: size,
-          },
-        ]}
-      >
-        <LinearGradient
-          colors={
-            isSand
-              ? [
-                  "rgba(255, 245, 230, 0.00)",
-                  "rgba(221, 203, 181, 0.16)",
-                  "rgba(185, 155, 122, 0.22)",
-                  "rgba(140, 110, 80, 0.00)",
-                ]
-              : isDark
-                ? [
-                    "rgba(255, 255, 255, 0.00)",
-                    "rgba(100, 150, 255, 0.08)",
-                    "rgba(56, 139, 255, 0.12)",
-                    "rgba(30, 60, 140, 0.00)",
-                  ]
-                : [
-                    // Scenic Sunset (Alpine Lake / Rocky Shore): Warm ambient diffuse glow
-                    "rgba(255, 240, 220, 0.00)",
-                    "rgba(255, 220, 180, 0.14)",
-                    "rgba(245, 195, 150, 0.20)",
-                    "rgba(215, 160, 110, 0.00)",
-                  ]
-          }
-          locations={[0, 0.35, 0.70, 1]}
-          style={[
-            styles.softGroundPad,
-            {
-              width: size * 0.78,
-              height: size * 0.28,
-              top: size * 0.62,
-              left: size * 0.11,
-              borderRadius: (size * 0.28) / 2,
-            },
-          ]}
-        />
-      </View>
-
-      {/* 2. Live Cloud Character (Canvas / WebView receiving touches) */}
+      {/* 1. Live Interactive Cloud Character (Canvas receiving touches) */}
       {children}
 
-      {/* 3. FRONT OPTICAL LAYER: Dedicated Transparent Glass Ring PNG */}
-      {/* Restrained soft optical backglow */}
+      {/* 2. OPTICAL GLASS LENS OVERLAYS (All pointerEvents="none") */}
+      {/* 2A. Soft outer atmospheric sky bloom */}
       <View
         pointerEvents="none"
         style={[
-          styles.ringSoftBackdropGlow,
+          styles.ringAtmosphericBloom,
           {
-            width: size * 0.94,
-            height: size * 0.94,
-            borderRadius: (size * 0.94) / 2,
-            top: size * 0.03,
-            left: size * 0.03,
+            width: size * 0.96,
+            height: size * 0.96,
+            borderRadius: (size * 0.96) / 2,
+            top: size * 0.02,
+            left: size * 0.02,
           },
         ]}
       />
 
-      {/* High-res Apple Vision Pro-style transparent optical glass ring asset */}
+      {/* 2B. Consistent razor-thin 360° optical glass edge highlight */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.ringCircularOpticalEdge,
+          {
+            width: size * 0.95,
+            height: size * 0.95,
+            borderRadius: (size * 0.95) / 2,
+            top: size * 0.025,
+            left: size * 0.025,
+          },
+        ]}
+      />
+
+      {/* 2C. Subtle concentric ice-blue refraction edge */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.ringConcentricRefraction,
+          {
+            width: size * 0.925,
+            height: size * 0.925,
+            borderRadius: (size * 0.925) / 2,
+            top: size * 0.0375,
+            left: size * 0.0375,
+          },
+        ]}
+      />
+
+      {/* 2D. Dedicated High-Res Apple Vision Pro Glass Ring Asset */}
       <ExpoImage
         source={RING_IMAGE}
         style={[
@@ -701,20 +678,27 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
   },
-  softGroundGlowContainer: {
+  ringAtmosphericBloom: {
     position: "absolute",
-    overflow: "hidden",
-  },
-  softGroundPad: {
-    position: "absolute",
-    opacity: 0.92,
-  },
-  ringSoftBackdropGlow: {
-    position: "absolute",
+    borderWidth: 1,
+    borderColor: "rgba(142, 181, 255, 0.18)",
+    backgroundColor: "transparent",
     shadowColor: "#8EB5FF",
     shadowOpacity: 0.22,
     shadowRadius: 18,
-    elevation: 3,
+    elevation: 2,
+  },
+  ringCircularOpticalEdge: {
+    position: "absolute",
+    borderWidth: 0.8,
+    borderColor: "rgba(255, 255, 255, 0.38)",
+    backgroundColor: "transparent",
+  },
+  ringConcentricRefraction: {
+    position: "absolute",
+    borderWidth: 0.5,
+    borderColor: "rgba(196, 225, 255, 0.24)",
+    backgroundColor: "transparent",
   },
   ringOverlayImage: {
     position: "absolute",

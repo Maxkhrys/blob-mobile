@@ -25,6 +25,7 @@ export const DEFAULT_USER_PROFILE: UserProfile = {
     recognizedFriend: true,
   },
   onboardingCompleted: false,
+  homePlayAreaScale: 1.0,
 };
 
 export const DEFAULT_DEVICES: Device[] = [
@@ -134,6 +135,12 @@ export class LocalStorageService {
           savedPresets: Array.isArray(stored.savedPresets)
             ? stored.savedPresets
             : [],
+          homePlayAreaScale:
+            typeof stored.homePlayAreaScale === "number" &&
+            stored.homePlayAreaScale >= 0.75 &&
+            stored.homePlayAreaScale <= 1.35
+              ? stored.homePlayAreaScale
+              : 1.0,
         };
       }
     } catch (e) {

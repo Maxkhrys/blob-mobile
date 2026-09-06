@@ -21,6 +21,7 @@ import {
   AtmosphericVariant,
 } from "./AtmosphericBackground";
 import { useTabBarInset } from "../navigation/GlassTabBar";
+import { useAppStore } from "../../store/AppContext";
 
 export function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -53,8 +54,18 @@ export function Screen({
   const defaultBottom = useTabBarInset();
   const bottomPadding = contentPaddingBottom !== undefined ? contentPaddingBottom : defaultBottom;
 
+  let activeEnvironment = environment;
+  try {
+    const store = useAppStore();
+    if (!activeEnvironment && store?.profile?.environment) {
+      activeEnvironment = store.profile.environment;
+    }
+  } catch {
+    // Fallback if rendered outside AppContext
+  }
+
   return (
-    <AtmosphericBackground variant={variant} environment={environment}>
+    <AtmosphericBackground variant={variant} environment={activeEnvironment}>
       <SafeAreaView
         edges={["top", "left", "right"]}
         style={{ flex: 1, backgroundColor: "transparent" }}

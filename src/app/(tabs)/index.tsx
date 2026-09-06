@@ -4,27 +4,17 @@ import { useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAppStore } from "../../store/AppContext";
 import { CloudPreview } from "../../components/character/CloudPreview";
-import { CharacterToolMenu } from "../../components/character/CharacterToolMenu";
+import {
+  CharacterToolMenu,
+  MoodPreset,
+} from "../../components/character/CharacterToolMenu";
 import { Screen, Avatar, layout } from "../../components/ui/Kit";
 import {
   GlassOrbFrame,
   StatusDot,
 } from "../../components/ui/Glass";
-import { useTheme } from "../../constants/theme";
 import { narrative } from "../../components/home/narrative";
 import { useFeedback } from "../../services/feedback/FeedbackProvider";
-
-import { CloudEmotion } from "../../types";
-
-type MoodType = "CALM" | "HAPPY" | "CURIOUS" | "FOCUSED" | "SLEEPY";
-
-const MOODS: readonly { id: MoodType; label: string; behaviour: string; emotion: CloudEmotion }[] = [
-  { id: "CALM", label: "CALM", behaviour: "FLOAT_DRIFT", emotion: "idle" },
-  { id: "HAPPY", label: "HAPPY", behaviour: "HAPPY_BOUNCE", emotion: "happy" },
-  { id: "CURIOUS", label: "CURIOUS", behaviour: "CURIOUS_DOUBLE_TAKE", emotion: "curious" },
-  { id: "FOCUSED", label: "FOCUSED", behaviour: "NOD_YES", emotion: "idle" },
-  { id: "SLEEPY", label: "SLEEPY", behaviour: "SLEEPY_YAWN", emotion: "sleepy" },
-];
 
 export default function HomeScreen() {
   const {
@@ -40,10 +30,9 @@ export default function HomeScreen() {
   } = useAppStore();
 
   const router = useRouter();
-  const c = useTheme();
   const feedback = useFeedback();
-  const { width } = useWindowDimensions();
-  const [selectedMood, setSelectedMood] = useState<MoodType>("CALM");
+  const { width, height } = useWindowDimensions();
+  const [selectedMood, setSelectedMood] = useState<string>("CALM");
   const [menuOpen, setMenuOpen] = useState(false);
 
   const name = proximity.driverName || "Your friend";
@@ -53,10 +42,12 @@ export default function HomeScreen() {
     profile.characterName || "Your Cherri",
   );
 
-  // Dynamic preview size targeted at ~78-82% available width (280px for S22)
-  const previewSize = Math.min(width * 0.78, 285);
+  // Dynamic preview size targeted at ~84-88% available width with user scale factor
+  const basePreviewSize = Math.min(width * 0.86, height * 0.42, 340);
+  const playScale = profile.homePlayAreaScale ?? 1.0;
+  const previewSize = Math.round(Math.min(basePreviewSize * playScale, width - 24));
 
-  const handleMoodSelect = (mood: (typeof MOODS)[number]) => {
+  const handleMoodSelect = (mood: MoodPreset) => {
     feedback("tick");
     setSelectedMood(mood.id);
     triggerEmotion(mood.emotion);
@@ -117,103 +108,80 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* 2. Hero Centerpiece: Pure Integrated Cherri in Optical Glass Orb + Liquid Tool Menu */}
+        {/* 2. Hero Centerpiece: Dedicated Interaction Stage for Glass Orb + Liquid Tool Menu */}
         <View style={styles.heroSection}>
-          {/* Left Mood Rail (Vertical mood triggers with sharp active indicator) */}
-          <View style={[styles.moodRail, menuOpen && { opacity: 0.35 }]} pointerEvents={menuOpen ? "none" : "auto"}>
-            {MOODS.map((m) => {
-              const isActive = selectedMood === m.id;
-              return (
-                <Pressable
-                  key={m.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Mood: ${m.label}`}
-                  onPress={() => handleMoodSelect(m)}
-                  style={styles.moodItem}
-                >
-                  <View style={styles.moodDotWrapper}>
-                    {isActive && <View style={styles.moodActiveHalo} />}
-                    <View
-                      style={[
-                        styles.moodDot,
-                        {
-                          backgroundColor: isActive
-                            ? c.electricBlue
-                            : "rgba(255, 255, 255, 0.40)",
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text
-                    style={[
-                      styles.moodLabel,
-                      {
-                        color: isActive ? "#FFFFFF" : "rgba(240, 244, 252, 0.65)",
-                        fontWeight: isActive ? "700" : "500",
-                      },
-                    ]}
-                  >
-                    {m.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {/* Optical Glass Lens Sphere holding Live Interactive Cherri */}
-          <GlassOrbFrame size={previewSize} environment={profile.environment}>
-            <CloudPreview
-              size={previewSize}
-              presentation="integrated"
-              colourId={profile.characterColour}
-              environment={profile.environment}
-              emotion={cloudEmotion}
-              behaviourId={activeBehaviourId ?? undefined}
-              cloudSettings={cloudSettings}
-              proximityState={proximity.state}
-              onDoubleTap={() => {
-                feedback("success");
-                setMenuOpen((v) => !v);
-              }}
-              onTap={() => {
-                if (menuOpen) {
-                  feedback("tick");
-                  setMenuOpen(false);
+          <View
+            style={[
+              styles.interactionStage,
+              { width: previewSize, height: previewSize },
+            ]}
+          >
+            {/* Optical Glass Lens Sphere holding Live Interactive Cherri */}
+            <GlassOrbFrame size={previewSize} environment={profile.environment}>
+              <CloudPreview
+                size={previewSize}
+                characterScale={0.68}
+                presentation="integrated"
+                colourId={profile.characterColour}
+                environment={profile.environment}
+                emotion={cloudEmotion}
+                behaviourId={activeBehaviourId ?? undefined}
+                cloudSettings={cloudSettings}
+                proximityState={proximity.state}
+                onDoubleTap={() => {
+                  feedback("success");
+                  setMenuOpen((v) => !v);
+                }}
+                onTap={() => {
+                  if (menuOpen) {
+                    feedback("tick");
+                    setMenuOpen(false);
+                  }
+                }}
+                driverYaw={
+                  proximity.state === "HOME"
+                    ? 0
+                    : proximity.direction === "left"
+                      ? -0.5
+                      : proximity.direction === "right"
+                        ? 0.5
+                        : 0
                 }
-              }}
-              driverYaw={
-                proximity.state === "HOME"
-                  ? 0
-                  : proximity.direction === "left"
-                    ? -0.5
-                    : proximity.direction === "right"
-                      ? 0.5
-                      : 0
-              }
-            />
-          </GlassOrbFrame>
+              />
+            </GlassOrbFrame>
 
-          {/* Liquid / Gooey Double-Tap Character Halo Menu */}
-          <CharacterToolMenu
-            open={menuOpen}
-            onClose={() => setMenuOpen(false)}
-            screenSize={previewSize}
-            colourId={profile.characterColour}
-            onColourChange={(col) => updateProfile({ characterColour: col })}
-            environment={profile.environment}
-            onEnvironmentChange={(env) => updateProfile({ environment: env })}
-            onTriggerExpression={(exprId) => triggerBehaviour(exprId)}
-          />
+            {/* Liquid / Gooey Double-Tap Character Halo Menu */}
+            <CharacterToolMenu
+              open={menuOpen}
+              onClose={() => setMenuOpen(false)}
+              stageSize={previewSize}
+              colourId={profile.characterColour}
+              onColourChange={(col) => updateProfile({ characterColour: col })}
+              environment={profile.environment}
+              onEnvironmentChange={(env) => updateProfile({ environment: env })}
+              onTriggerExpression={(exprId) => triggerBehaviour(exprId)}
+              currentMoodId={selectedMood}
+              onMoodSelect={handleMoodSelect}
+            />
+          </View>
         </View>
 
         {/* 3. Dynamic Narrative Status & Drag Instruction (Safely above floating dock) */}
         <View style={styles.narrativeSection}>
-          <Text numberOfLines={1} style={styles.narrativeTitle}>
-            {title}
-          </Text>
+          <View style={styles.narrativeHeaderRow}>
+            <Text numberOfLines={1} style={styles.narrativeTitle}>
+              {title}
+            </Text>
+            <View style={styles.moodStatusBadge}>
+              <View style={styles.moodStatusDot} />
+              <Text style={styles.moodStatusText}>{selectedMood}</Text>
+            </View>
+          </View>
           <View style={styles.glowingDivider} />
           <Text style={styles.dragInstruction}>
-            {menuOpen ? "TAP CHERRI OR OUTSIDE TO CLOSE" : "DOUBLE TAP TO CUSTOMIZE · DRAG TO PLAY"}
+            {menuOpen
+              ? "TAP CHERRI OR OUTSIDE TO CLOSE"
+              : "DOUBLE TAP TO CUSTOMIZE · DRAG TO PLAY"}
           </Text>
         </View>
       </View>
@@ -291,57 +259,26 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   heroSection: {
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    position: "relative",
     marginVertical: 2,
   },
-  moodRail: {
-    position: "absolute",
-    left: 4,
-    top: 10,
-    zIndex: 10,
-    gap: 13,
-  },
-  moodItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    paddingVertical: 2,
-  },
-  moodDotWrapper: {
-    width: 12,
-    height: 12,
+  interactionStage: {
+    position: "relative",
     alignItems: "center",
     justifyContent: "center",
-  },
-  moodActiveHalo: {
-    position: "absolute",
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: "#388BFF",
-  },
-  moodDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-  },
-  moodLabel: {
-    fontSize: 9.5,
-    letterSpacing: 1.1,
-  },
-  actionsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingHorizontal: 12,
+    overflow: "visible",
   },
   narrativeSection: {
     alignItems: "center",
     gap: 5,
+  },
+  narrativeHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 16,
   },
   narrativeTitle: {
     fontSize: 21,
@@ -349,6 +286,29 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: -0.3,
     textAlign: "center",
+  },
+  moodStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.16)",
+  },
+  moodStatusDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "#388BFF",
+  },
+  moodStatusText: {
+    fontSize: 9.5,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    color: "rgba(255, 255, 255, 0.90)",
   },
   glowingDivider: {
     width: 38,
