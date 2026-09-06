@@ -11,9 +11,12 @@ import {
   TextInputProps,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { Image as ExpoImage } from "expo-image";
 import { useTheme, Radius } from "../../constants/theme";
 import { useFeedback } from "../../services/feedback/FeedbackProvider";
 import { useReducedMotion } from "./Kit";
+
+const RING_IMAGE = require("../../../assets/images/ring-glass.png");
 
 // ---------------------------------------------------------------------------
 // 1. GlassSurface: Translucent frosted glass panel with fine white edge
@@ -528,16 +531,14 @@ export function GlassOrbFrame({
         position: "relative",
       }}
     >
-      {/* 1. BACK OPTICAL LAYER: Subtle Ground Shadow Receiving Disc (behind character) */}
+      {/* 1. BACK OPTICAL LAYER: Environment-aware soft diffuse ground pad (behind character & shadow) */}
       <View
         pointerEvents="none"
         style={[
-          styles.orbGroundReceivingLens,
+          styles.softGroundGlowContainer,
           {
-            bottom: size * 0.05,
-            width: size * 0.84,
-            height: size * 0.30,
-            borderRadius: size * 0.42,
+            width: size,
+            height: size,
           },
         ]}
       >
@@ -545,105 +546,72 @@ export function GlassOrbFrame({
           colors={
             isSand
               ? [
-                  "rgba(255, 245, 230, 0.02)",
-                  "rgba(221, 203, 181, 0.22)",
-                  "rgba(185, 155, 122, 0.08)",
+                  "rgba(255, 245, 230, 0.00)",
+                  "rgba(221, 203, 181, 0.16)",
+                  "rgba(185, 155, 122, 0.22)",
+                  "rgba(140, 110, 80, 0.00)",
                 ]
               : isDark
                 ? [
-                    "rgba(255, 255, 255, 0.01)",
-                    "rgba(140, 180, 255, 0.14)",
-                    "rgba(70, 120, 240, 0.04)",
+                    "rgba(255, 255, 255, 0.00)",
+                    "rgba(100, 150, 255, 0.08)",
+                    "rgba(56, 139, 255, 0.12)",
+                    "rgba(30, 60, 140, 0.00)",
                   ]
                 : [
-                    "rgba(255, 255, 255, 0.02)",
-                    "rgba(255, 235, 215, 0.18)",
-                    "rgba(200, 175, 255, 0.06)",
+                    // Scenic Sunset (Alpine Lake / Rocky Shore): Warm ambient diffuse glow
+                    "rgba(255, 240, 220, 0.00)",
+                    "rgba(255, 220, 180, 0.14)",
+                    "rgba(245, 195, 150, 0.20)",
+                    "rgba(215, 160, 110, 0.00)",
                   ]
           }
-          locations={[0, 0.58, 1]}
-          style={StyleSheet.absoluteFill}
+          locations={[0, 0.35, 0.70, 1]}
+          style={[
+            styles.softGroundPad,
+            {
+              width: size * 0.78,
+              height: size * 0.28,
+              top: size * 0.62,
+              left: size * 0.11,
+              borderRadius: (size * 0.28) / 2,
+            },
+          ]}
         />
       </View>
 
       {/* 2. Live Cloud Character (Canvas / WebView receiving touches) */}
       {children}
 
-      {/* 3. FRONT OPTICAL LAYER: Specular Glass Lens Overlays (must ignore pointer events!) */}
-      {/* 3A. Outer Ultra-Thin Specular Rim & Soft Sky Bloom */}
+      {/* 3. FRONT OPTICAL LAYER: Dedicated Transparent Glass Ring PNG */}
+      {/* Restrained soft optical backglow */}
       <View
         pointerEvents="none"
         style={[
-          styles.orbOuterSpecularRim,
+          styles.ringSoftBackdropGlow,
+          {
+            width: size * 0.94,
+            height: size * 0.94,
+            borderRadius: (size * 0.94) / 2,
+            top: size * 0.03,
+            left: size * 0.03,
+          },
+        ]}
+      />
+
+      {/* High-res Apple Vision Pro-style transparent optical glass ring asset */}
+      <ExpoImage
+        source={RING_IMAGE}
+        style={[
+          styles.ringOverlayImage,
           {
             width: size,
             height: size,
-            borderRadius: size / 2,
           },
         ]}
-      />
-
-      {/* 3B. Concentric Double Refraction Edge (Lilac/amethyst internal refraction) */}
-      <View
+        contentFit="contain"
         pointerEvents="none"
-        style={[
-          styles.orbDoubleRefractionEdge,
-          {
-            width: size - 5,
-            height: size - 5,
-            borderRadius: (size - 5) / 2,
-          },
-        ]}
-      />
-
-      {/* 3C. Faint Inner Shadow / Sphere Depth Vignette */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.orbInnerDepthVignette,
-          {
-            width: size - 2,
-            height: size - 2,
-            borderRadius: (size - 2) / 2,
-          },
-        ]}
-      />
-
-      {/* 3D. Top-Left Delicate Specular Glare Arc */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.orbTopSpecularArc,
-          {
-            width: size * 0.54,
-            top: 3,
-          },
-        ]}
-      />
-
-      {/* 3E. Secondary Top-Left Lilac Caustic Highlight */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.orbLilacCausticGlint,
-          {
-            width: size * 0.22,
-            top: 5.5,
-            left: size * 0.22,
-          },
-        ]}
-      />
-
-      {/* 3F. Bottom-Right Opposing Warm Sunset Reflection */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.orbBottomWarmReflection,
-          {
-            width: size * 0.46,
-            bottom: 4.5,
-          },
-        ]}
+        priority="high"
       />
     </View>
   );
@@ -733,48 +701,24 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
   },
-  orbGroundReceivingLens: {
+  softGroundGlowContainer: {
     position: "absolute",
     overflow: "hidden",
   },
-  orbOuterSpecularRim: {
+  softGroundPad: {
     position: "absolute",
-    borderWidth: 1.0,
-    borderColor: "rgba(255, 255, 255, 0.42)",
+    opacity: 0.92,
+  },
+  ringSoftBackdropGlow: {
+    position: "absolute",
     shadowColor: "#8EB5FF",
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    elevation: 4,
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 3,
   },
-  orbDoubleRefractionEdge: {
+  ringOverlayImage: {
     position: "absolute",
-    borderWidth: 0.75,
-    borderColor: "rgba(196, 165, 255, 0.22)",
-  },
-  orbInnerDepthVignette: {
-    position: "absolute",
-    borderWidth: 1.4,
-    borderColor: "rgba(10, 16, 32, 0.16)",
-  },
-  orbTopSpecularArc: {
-    position: "absolute",
-    height: 1.5,
-    borderRadius: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.65)",
-    shadowColor: "#FFFFFF",
-    shadowOpacity: 0.5,
-    shadowRadius: 3,
-  },
-  orbLilacCausticGlint: {
-    position: "absolute",
-    height: 1.0,
-    borderRadius: 0.5,
-    backgroundColor: "rgba(200, 180, 255, 0.45)",
-  },
-  orbBottomWarmReflection: {
-    position: "absolute",
-    height: 1.2,
-    borderRadius: 1,
-    backgroundColor: "rgba(255, 215, 185, 0.24)",
+    top: 0,
+    left: 0,
   },
 });

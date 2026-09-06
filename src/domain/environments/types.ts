@@ -7,6 +7,9 @@ export type DisplayMode = 'dark' | 'warm' | 'brown';
 
 export type EnvironmentId =
   | 'scenic'
+  | 'scenic-b'
+  | 'bg-a'
+  | 'bg-b'
   | 'zen'
   | 'dark'
   | 'warm'

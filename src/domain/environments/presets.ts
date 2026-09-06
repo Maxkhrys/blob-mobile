@@ -8,7 +8,7 @@ import { EnvironmentPreset } from "./types";
 export const CANONICAL_ENVIRONMENTS: EnvironmentPreset[] = [
   {
     id: "scenic",
-    label: "Scenic Sunset",
+    label: "Background A",
     displayMode: "dark",
     screenColour: "#000000",
     description:
@@ -17,7 +17,20 @@ export const CANONICAL_ENVIRONMENTS: EnvironmentPreset[] = [
     surfaceColor: "#151B2B",
     accentColor: "#60A5FA",
     textColor: "#FFFFFF",
-    badge: "Scenic Photo",
+    badge: "Alpine Lake",
+  },
+  {
+    id: "scenic-b",
+    label: "Background B",
+    displayMode: "dark",
+    screenColour: "#000000",
+    description:
+      "Golden hour sunset over coastal rocks and serene mountain water.",
+    bgColor: "#0A0D18",
+    surfaceColor: "#171F33",
+    accentColor: "#F59E0B",
+    textColor: "#FFFFFF",
+    badge: "Rocky Shore",
   },
   {
     id: "zen",
@@ -26,11 +39,11 @@ export const CANONICAL_ENVIRONMENTS: EnvironmentPreset[] = [
     screenColour: "#cfc3b4",
     description:
       "Calm sand and warm stone ambience. Soft, grounded natural light.",
-    bgColor: "#F5F3EF",
-    surfaceColor: "#FFFFFF",
+    bgColor: "#15120E",
+    surfaceColor: "#2A2118",
     accentColor: "#8C7862",
-    textColor: "#38322B",
-    badge: "Warm Sand",
+    textColor: "#F5F3EF",
+    badge: "Sand",
   },
   {
     id: "dark",
@@ -52,15 +65,15 @@ export const CANONICAL_ENVIRONMENTS: EnvironmentPreset[] = [
     screenColour: "#a58d76",
     description:
       "Subtle golden cabin warmth and dusk ember tones. Cozy night drive feel.",
-    bgColor: "#FFF8F0",
-    surfaceColor: "#FFFFFF",
+    bgColor: "#26160C",
+    surfaceColor: "#3B2214",
     accentColor: "#D97706",
-    textColor: "#451A03",
+    textColor: "#FDE68A",
     badge: "Cabin Dusk",
   },
 ];
 
-export const DEFAULT_ENVIRONMENT = CANONICAL_ENVIRONMENTS[0]; // Scenic Sunset
+export const DEFAULT_ENVIRONMENT = CANONICAL_ENVIRONMENTS[0]; // Scenic Sunset (Background A)
 
 export function getEnvironmentById(id: string): EnvironmentPreset {
   const norm = (id || "").toLowerCase();
@@ -68,12 +81,11 @@ export function getEnvironmentById(id: string): EnvironmentPreset {
     CANONICAL_ENVIRONMENTS.find(
       (e) =>
         e.id === norm ||
-        (norm === "photo" && e.id === "scenic") ||
-        (norm === "sand" && e.id === "zen") ||
-        (norm === "warm-stone" && e.id === "zen") ||
-        (norm === "amoled" && e.id === "dark") ||
-        (norm === "warm-glow" && e.id === "warm") ||
-        (norm === "sky" && e.id === "dark"),
+        ((norm === "bg-a" || norm === "photo" || norm === "lake") && e.id === "scenic") ||
+        ((norm === "bg-b" || norm === "shore" || norm === "rocky") && e.id === "scenic-b") ||
+        ((norm === "sand" || norm === "warm-stone") && e.id === "zen") ||
+        ((norm === "amoled" || norm === "sky") && e.id === "dark") ||
+        (norm === "warm-glow" && e.id === "warm"),
     ) || DEFAULT_ENVIRONMENT
   );
 }

@@ -510,11 +510,13 @@ function EnvironmentSubmenu({
       <View style={styles.submenuCard}>
         <Text style={styles.submenuTitle}>Environment Backdrop</Text>
         <View style={styles.envPillRow}>
-          {CANONICAL_ENVIRONMENTS.slice(0, 3).map((e) => {
+          {CANONICAL_ENVIRONMENTS.map((e) => {
             const isSelected =
               normCurrent === e.id ||
+              (e.id === "scenic" && (normCurrent === "bg-a" || !currentEnv)) ||
+              (e.id === "scenic-b" && normCurrent === "bg-b") ||
               (e.id === "zen" && (normCurrent === "sand" || normCurrent === "warm-stone")) ||
-              (e.id === "dark" && normCurrent === "amoled");
+              (e.id === "dark" && (normCurrent === "amoled" || normCurrent === "sky"));
             return (
               <Pressable
                 key={e.id}
@@ -683,14 +685,15 @@ const styles = StyleSheet.create({
   },
   envPillRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
     justifyContent: "space-between",
   },
   envPill: {
-    flex: 1,
+    width: "48%",
     paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 14,
+    paddingHorizontal: 8,
+    borderRadius: 12,
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",

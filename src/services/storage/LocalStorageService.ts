@@ -17,7 +17,7 @@ export const DEFAULT_USER_PROFILE: UserProfile = {
   carName: "Audi",
   characterName: "Lumi",
   characterColour: "purple-void",
-  environment: "zen",
+  environment: "scenic",
   privacyMode: "friends-only",
   notifications: {
     friendNearby: true,
@@ -120,7 +120,9 @@ export class LocalStorageService {
           environment:
             stored.environment === "sky"
               ? "dark"
-              : stored.environment || DEFAULT_USER_PROFILE.environment,
+              : !stored.environment || (!stored.onboardingCompleted && stored.environment === "zen")
+                ? "scenic"
+                : stored.environment,
           themeMode: ["system", "light", "dark"].includes(stored.themeMode)
             ? stored.themeMode
             : "system",

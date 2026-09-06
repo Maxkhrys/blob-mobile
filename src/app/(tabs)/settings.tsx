@@ -14,6 +14,7 @@ import {
   StatusDot,
 } from "../../components/ui/Glass";
 import { PrivacyMode, SleepMode } from "../../types";
+import { CANONICAL_ENVIRONMENTS } from "../../domain/environments/presets";
 
 function SettingsToggle({
   label,
@@ -264,6 +265,91 @@ export default function SettingsScreen() {
                   >
                     {mode === "system" ? "System" : mode === "dark" ? "Dark Glass" : "Light Glass"}
                   </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={{ gap: 8, marginTop: 14 }}>
+          <Text style={styles.subLabel}>Home Background</Text>
+          <View style={{ gap: 8 }}>
+            {CANONICAL_ENVIRONMENTS.map((env) => {
+              const currentEnv = (profile.environment || "scenic").toLowerCase();
+              const isSelected =
+                currentEnv === env.id ||
+                (env.id === "scenic" && (currentEnv === "bg-a" || !profile.environment)) ||
+                (env.id === "scenic-b" && currentEnv === "bg-b") ||
+                (env.id === "zen" && (currentEnv === "sand" || currentEnv === "warm-stone")) ||
+                (env.id === "dark" && (currentEnv === "amoled" || currentEnv === "sky"));
+
+              return (
+                <Pressable
+                  key={env.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Select ${env.label}`}
+                  onPress={() => {
+                    feedback("tick");
+                    updateProfile({ environment: env.id });
+                  }}
+                  style={[
+                    styles.bgRow,
+                    isSelected && styles.bgRowSelected,
+                  ]}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                    <View
+                      style={[
+                        styles.bgSwatch,
+                        {
+                          backgroundColor: env.bgColor,
+                          borderColor: isSelected ? "#388BFF" : "rgba(255, 255, 255, 0.16)",
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={
+                          env.id === "scenic" || env.id === "scenic-b"
+                            ? "image-outline"
+                            : env.id === "zen"
+                              ? "leaf-outline"
+                              : "moon-outline"
+                        }
+                        size={15}
+                        color={isSelected ? "#388BFF" : "rgba(255, 255, 255, 0.75)"}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Text style={styles.bgTitle}>{env.label}</Text>
+                        {env.badge && (
+                          <View
+                            style={[
+                              styles.bgBadge,
+                              isSelected && { backgroundColor: "rgba(56, 139, 255, 0.28)" },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.bgBadgeText,
+                                isSelected && { color: "#93C5FD" },
+                              ]}
+                            >
+                              {env.badge}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.bgDesc} numberOfLines={1}>
+                        {env.description}
+                      </Text>
+                    </View>
+                  </View>
+                  {isSelected ? (
+                    <Ionicons name="checkmark-circle" size={19} color="#388BFF" />
+                  ) : (
+                    <View style={styles.radioUnchecked} />
+                  )}
                 </Pressable>
               );
             })}
@@ -613,6 +699,50 @@ const styles = StyleSheet.create({
   devSubOptionText: {
     fontSize: 13,
     color: "rgba(240, 244, 252, 0.80)",
+  },
+  bgRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  bgRowSelected: {
+    backgroundColor: "rgba(56, 139, 255, 0.16)",
+    borderColor: "rgba(56, 139, 255, 0.45)",
+  },
+  bgSwatch: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bgTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  bgBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 9999,
+    backgroundColor: "rgba(255, 255, 255, 0.10)",
+  },
+  bgBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "rgba(240, 244, 252, 0.70)",
+  },
+  bgDesc: {
+    fontSize: 11,
+    color: "rgba(240, 244, 252, 0.50)",
+    marginTop: 1,
   },
   versionFooter: {
     textAlign: "center",

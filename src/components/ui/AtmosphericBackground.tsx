@@ -1,9 +1,11 @@
 import React from "react";
-import { StyleSheet, View, ViewStyle, StyleProp, Image } from "react-native";
+import { StyleSheet, View, ViewStyle, StyleProp } from "react-native";
+import { Image as ExpoImage } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "../../constants/theme";
 
-const ATMOSPHERIC_BG_IMAGE = require("../../../assets/images/atmospheric-bg.jpg");
+const BACKGROUND_A = require("../../../assets/images/background-a.jpg");
+const BACKGROUND_B = require("../../../assets/images/background-b.jpg");
 
 export type AtmosphericVariant = "home" | "calm" | "bright";
 
@@ -23,10 +25,25 @@ export function AtmosphericBackground({
   const theme = useTheme();
   const isLight = theme.mode === "light";
   const envNorm = (environment || "scenic").toLowerCase();
-  const isScenic = envNorm === "scenic" || envNorm === "photo" || (!environment && !isLight);
-  const isSand = envNorm === "zen" || envNorm === "sand" || envNorm === "warm-stone";
-  const isDark = envNorm === "dark" || envNorm === "amoled" || envNorm === "sky";
-  const isWarm = envNorm === "warm" || envNorm === "warm-glow";
+
+  const isBgB =
+    envNorm === "scenic-b" ||
+    envNorm === "bg-b" ||
+    envNorm === "shore" ||
+    envNorm === "rocky";
+  const isSand =
+    envNorm === "zen" ||
+    envNorm === "sand" ||
+    envNorm === "warm-stone";
+  const isDark =
+    envNorm === "dark" ||
+    envNorm === "amoled" ||
+    envNorm === "sky";
+  const isWarm =
+    envNorm === "warm" ||
+    envNorm === "warm-glow";
+
+  const scenicSource = isBgB ? BACKGROUND_B : BACKGROUND_A;
 
   if (isLight) {
     const lightScrimColors =
@@ -36,10 +53,12 @@ export function AtmosphericBackground({
 
     return (
       <View style={[styles.container, style]}>
-        <Image
-          source={ATMOSPHERIC_BG_IMAGE}
+        <ExpoImage
+          source={scenicSource}
           style={StyleSheet.absoluteFill}
-          resizeMode="cover"
+          contentFit="cover"
+          priority="high"
+          cachePolicy="memory-disk"
         />
         <LinearGradient
           colors={lightScrimColors}
@@ -74,7 +93,7 @@ export function AtmosphericBackground({
   }
 
   // 2. Pure AMOLED Dark Environment
-  if (isDark && !isScenic) {
+  if (isDark) {
     return (
       <View style={[styles.container, { backgroundColor: "#000000" }, style]}>
         <LinearGradient
@@ -130,10 +149,12 @@ export function AtmosphericBackground({
   return (
     <View style={[styles.container, style]}>
       {/* 1. High-Resolution Atmospheric Sunset Vista Wallpaper */}
-      <Image
-        source={ATMOSPHERIC_BG_IMAGE}
+      <ExpoImage
+        source={scenicSource}
         style={StyleSheet.absoluteFill}
-        resizeMode="cover"
+        contentFit="cover"
+        priority="high"
+        cachePolicy="memory-disk"
       />
 
       {/* 2. Tuned Glass Scrim Gradient for pristine readability and dock elevation */}

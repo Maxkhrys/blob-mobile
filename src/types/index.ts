@@ -59,6 +59,9 @@ export interface CloudColourPreset {
 
 export type EnvironmentId =
   | "scenic"
+  | "scenic-b"
+  | "bg-a"
+  | "bg-b"
   | "zen"
   | "dark"
   | "warm"
