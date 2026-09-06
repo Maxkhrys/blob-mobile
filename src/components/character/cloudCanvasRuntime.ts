@@ -315,9 +315,7 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       rig.mouth.mouthCrescent = recipe.mouth.crescentSmileAmount || 0;
     }
 
-    function postTelemetry(payload) {
-      if (!initialConfig.debugTelemetry) return;
-      var message = { type: "lcdprotoTelemetry", payload: payload };
+    function postBridgeMessage(message) {
       try {
         if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
           window.ReactNativeWebView.postMessage(JSON.stringify(message));
@@ -327,6 +325,11 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       } catch (e) {}
     }
 
+    function postTelemetry(payload) {
+      if (!initialConfig.debugTelemetry) return;
+      postBridgeMessage({ type: "lcdprotoTelemetry", payload: payload });
+    }
+
     if (initialConfig.behaviourId) triggerBehaviour(initialConfig.behaviourId);
     else if (initialConfig.reactionId) triggerBehaviour(initialConfig.reactionId);
     else if (initialConfig.emotionId) triggerBehaviour(initialConfig.emotionId);
@@ -334,6 +337,8 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
     var pointerId = null;
     var downX = 0, downY = 0;
     var isDragging = false;
+    var tapBlockedUntil = 0;
+    var lastTapTime = 0;
 
     function getCanvasPoint(clientX, clientY) {
       var rect = canvas.getBoundingClientRect();
@@ -370,7 +375,26 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       if (pointerId === null || e.pointerId !== pointerId) return;
       pointerId = null;
       try { if (canvas.releasePointerCapture) canvas.releasePointerCapture(e.pointerId); } catch (err) {}
-      if (isDragging) { isDragging = false; drag.end(); }
+      if (isDragging) {
+        isDragging = false;
+        drag.end();
+        tapBlockedUntil = performance.now() + 350;
+      } else {
+        var nowTime = performance.now();
+        if (nowTime > tapBlockedUntil) {
+          if (nowTime - lastTapTime < 340) {
+            lastTapTime = 0;
+            postBridgeMessage({ type: "cloudDoubleTap" });
+          } else {
+            lastTapTime = nowTime;
+            setTimeout(function() {
+              if (lastTapTime === nowTime) {
+                postBridgeMessage({ type: "cloudTap" });
+              }
+            }, 350);
+          }
+        }
+      }
     }
 
     canvas.addEventListener("pointerdown", onPointerDown, { passive: false });

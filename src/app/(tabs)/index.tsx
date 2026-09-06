@@ -4,9 +4,9 @@ import { useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAppStore } from "../../store/AppContext";
 import { CloudPreview } from "../../components/character/CloudPreview";
+import { CharacterToolMenu } from "../../components/character/CharacterToolMenu";
 import { Screen, Avatar, layout } from "../../components/ui/Kit";
 import {
-  GlassCircleButton,
   GlassOrbFrame,
   StatusDot,
 } from "../../components/ui/Glass";
@@ -29,6 +29,7 @@ const MOODS: readonly { id: MoodType; label: string; behaviour: string; emotion:
 export default function HomeScreen() {
   const {
     profile,
+    updateProfile,
     device,
     proximity,
     cloudEmotion,
@@ -36,7 +37,6 @@ export default function HomeScreen() {
     activeBehaviourId,
     triggerBehaviour,
     cloudSettings,
-    drivers,
   } = useAppStore();
 
   const router = useRouter();
@@ -44,16 +44,13 @@ export default function HomeScreen() {
   const feedback = useFeedback();
   const { width } = useWindowDimensions();
   const [selectedMood, setSelectedMood] = useState<MoodType>("CALM");
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const name = proximity.driverName || "Your friend";
   const [title] = narrative(
     proximity.state,
     name,
     profile.characterName || "Your Cherri",
-  );
-
-  const nearby = drivers.filter((d) =>
-    ["Nearby", "Approaching", "Very close", "Together"].includes(d.status),
   );
 
   // Dynamic preview size targeted at ~78-82% available width (280px for S22)
@@ -66,13 +63,8 @@ export default function HomeScreen() {
     triggerBehaviour(mood.behaviour);
   };
 
-  const handleSparkleHeroAction = () => {
-    feedback("success");
-    triggerBehaviour("JOY_HOP");
-  };
-
   return (
-    <Screen scrollable={false} variant="home">
+    <Screen scrollable={false} variant="home" environment={profile.environment}>
       <View style={styles.homeContentWrapper}>
         {/* 1. Top Bar: CHERRIPI Title, Hardware Status, Studio Pill & Profile Avatar */}
         <View>
@@ -125,10 +117,10 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* 2. Hero Centerpiece: Pure Integrated Cherri in Crystal Glass Orb */}
+        {/* 2. Hero Centerpiece: Pure Integrated Cherri in Optical Glass Orb + Liquid Tool Menu */}
         <View style={styles.heroSection}>
           {/* Left Mood Rail (Vertical mood triggers with sharp active indicator) */}
-          <View style={styles.moodRail}>
+          <View style={[styles.moodRail, menuOpen && { opacity: 0.35 }]} pointerEvents={menuOpen ? "none" : "auto"}>
             {MOODS.map((m) => {
               const isActive = selectedMood === m.id;
               return (
@@ -168,8 +160,8 @@ export default function HomeScreen() {
             })}
           </View>
 
-          {/* Pure Crystal Glass Bubble holding Integrated Draggable Cherri */}
-          <GlassOrbFrame size={previewSize}>
+          {/* Optical Glass Lens Sphere holding Live Interactive Cherri */}
+          <GlassOrbFrame size={previewSize} environment={profile.environment}>
             <CloudPreview
               size={previewSize}
               presentation="integrated"
@@ -179,6 +171,16 @@ export default function HomeScreen() {
               behaviourId={activeBehaviourId ?? undefined}
               cloudSettings={cloudSettings}
               proximityState={proximity.state}
+              onDoubleTap={() => {
+                feedback("success");
+                setMenuOpen((v) => !v);
+              }}
+              onTap={() => {
+                if (menuOpen) {
+                  feedback("tick");
+                  setMenuOpen(false);
+                }
+              }}
               driverYaw={
                 proximity.state === "HOME"
                   ? 0
@@ -190,58 +192,29 @@ export default function HomeScreen() {
               }
             />
           </GlassOrbFrame>
+
+          {/* Liquid / Gooey Double-Tap Character Halo Menu */}
+          <CharacterToolMenu
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            screenSize={previewSize}
+            colourId={profile.characterColour}
+            onColourChange={(col) => updateProfile({ characterColour: col })}
+            environment={profile.environment}
+            onEnvironmentChange={(env) => updateProfile({ environment: env })}
+            onTriggerExpression={(exprId) => triggerBehaviour(exprId)}
+          />
         </View>
 
-        {/* 3. Four Large Circular Glass Actions Below Hero */}
-        <View style={styles.actionsRow}>
-          {/* Action 1: Expressions (Heart) */}
-          <GlassCircleButton
-            label="Expressions"
-            sublabel="Expressions"
-            size={52}
-            onPress={() => router.push("/(tabs)/character")}
-          >
-            <Ionicons name="heart" size={21} color="#FFFFFF" />
-          </GlassCircleButton>
-
-          {/* Action 2: Sparkle Reaction (Primary action with refined soft halo) */}
-          <GlassCircleButton
-            label="Sparkle"
-            size={58}
-            selected
-            onPress={handleSparkleHeroAction}
-          >
-            <Ionicons name="sparkles" size={23} color="#FFFFFF" />
-          </GlassCircleButton>
-
-          {/* Action 3: Lab & Sliders (Routes directly to /dev-lab) */}
-          <GlassCircleButton
-            label="Lab & Sliders"
-            sublabel="Lab & Sliders"
-            size={52}
-            onPress={() => router.push("/dev-lab")}
-          >
-            <Ionicons name="options-outline" size={21} color="#FFFFFF" />
-          </GlassCircleButton>
-
-          {/* Action 4: Nearby Radar */}
-          <GlassCircleButton
-            label="Nearby"
-            sublabel={nearby.length ? `${nearby.length} Nearby` : "Nearby"}
-            size={52}
-            onPress={() => router.push("/(tabs)/drivers")}
-          >
-            <Ionicons name="radio-outline" size={21} color="#FFFFFF" />
-          </GlassCircleButton>
-        </View>
-
-        {/* 4. Dynamic Narrative Status & Drag Instruction (Safely above floating dock) */}
+        {/* 3. Dynamic Narrative Status & Drag Instruction (Safely above floating dock) */}
         <View style={styles.narrativeSection}>
           <Text numberOfLines={1} style={styles.narrativeTitle}>
             {title}
           </Text>
           <View style={styles.glowingDivider} />
-          <Text style={styles.dragInstruction}>DRAG TO INTERACT</Text>
+          <Text style={styles.dragInstruction}>
+            {menuOpen ? "TAP CHERRI OR OUTSIDE TO CLOSE" : "DOUBLE TAP TO CUSTOMIZE · DRAG TO PLAY"}
+          </Text>
         </View>
       </View>
     </Screen>

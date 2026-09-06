@@ -7,19 +7,26 @@ const ATMOSPHERIC_BG_IMAGE = require("../../../assets/images/atmospheric-bg.jpg"
 
 export type AtmosphericVariant = "home" | "calm" | "bright";
 
-interface AtmosphericBackgroundProps {
+export interface AtmosphericBackgroundProps {
   children?: React.ReactNode;
   variant?: AtmosphericVariant;
+  environment?: string;
   style?: StyleProp<ViewStyle>;
 }
 
 export function AtmosphericBackground({
   children,
   variant = "home",
+  environment,
   style,
 }: AtmosphericBackgroundProps) {
   const theme = useTheme();
   const isLight = theme.mode === "light";
+  const envNorm = (environment || "scenic").toLowerCase();
+  const isScenic = envNorm === "scenic" || envNorm === "photo" || (!environment && !isLight);
+  const isSand = envNorm === "zen" || envNorm === "sand" || envNorm === "warm-stone";
+  const isDark = envNorm === "dark" || envNorm === "amoled" || envNorm === "sky";
+  const isWarm = envNorm === "warm" || envNorm === "warm-glow";
 
   if (isLight) {
     const lightScrimColors =
@@ -44,7 +51,62 @@ export function AtmosphericBackground({
     );
   }
 
-  // Dark / Primary Reference Atmospheric Wallpaper
+  // 1. Warm Sand / Zen Environment (similar to LCDPROTO static scene)
+  if (isSand) {
+    return (
+      <View style={[styles.container, { backgroundColor: "#15120E" }, style]}>
+        <LinearGradient
+          colors={["#2C2219", "#18130E", "#0C0907"]}
+          locations={[0, 0.48, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+        {/* Soft atmospheric sand illumination */}
+        <View pointerEvents="none" style={styles.sandGlow} />
+        {/* Zen garden ripple accents at floor */}
+        <View pointerEvents="none" style={styles.zenRipplesContainer}>
+          <View style={[styles.zenRipple, { width: 340, height: 52, opacity: 0.18 }]} />
+          <View style={[styles.zenRipple, { width: 300, height: 46, opacity: 0.24 }]} />
+          <View style={[styles.zenRipple, { width: 250, height: 38, opacity: 0.30 }]} />
+        </View>
+        {children}
+      </View>
+    );
+  }
+
+  // 2. Pure AMOLED Dark Environment
+  if (isDark && !isScenic) {
+    return (
+      <View style={[styles.container, { backgroundColor: "#000000" }, style]}>
+        <LinearGradient
+          colors={["#0A0D15", "#040508", "#000000"]}
+          locations={[0, 0.35, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+        {/* Subtle deep starlight motes */}
+        <View pointerEvents="none" style={styles.starMote1} />
+        <View pointerEvents="none" style={styles.starMote2} />
+        <View pointerEvents="none" style={styles.starMote3} />
+        {children}
+      </View>
+    );
+  }
+
+  // 3. Cabin Dusk Warm Ember Environment
+  if (isWarm) {
+    return (
+      <View style={[styles.container, { backgroundColor: "#0C0704" }, style]}>
+        <LinearGradient
+          colors={["#26160C", "#170D07", "#080402"]}
+          locations={[0, 0.45, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+        <View pointerEvents="none" style={styles.warmEmberGlow} />
+        {children}
+      </View>
+    );
+  }
+
+  // 4. Default: High-Resolution Atmospheric Sunset Vista Wallpaper
   const darkScrimColors =
     variant === "home"
       ? ([
@@ -104,5 +166,62 @@ const styles = StyleSheet.create({
     height: 160,
     borderRadius: 80,
     backgroundColor: "rgba(56, 139, 255, 0.04)",
+  },
+  sandGlow: {
+    position: "absolute",
+    top: "22%",
+    alignSelf: "center",
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: "rgba(221, 203, 181, 0.12)",
+  },
+  zenRipplesContainer: {
+    position: "absolute",
+    bottom: "12%",
+    alignSelf: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+  zenRipple: {
+    borderWidth: 1.2,
+    borderColor: "#B99B7A",
+    borderRadius: 999,
+  },
+  starMote1: {
+    position: "absolute",
+    top: "14%",
+    left: "22%",
+    width: 2.5,
+    height: 2.5,
+    borderRadius: 1.5,
+    backgroundColor: "rgba(255, 255, 255, 0.75)",
+  },
+  starMote2: {
+    position: "absolute",
+    top: "26%",
+    right: "18%",
+    width: 2,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "rgba(200, 225, 255, 0.65)",
+  },
+  starMote3: {
+    position: "absolute",
+    top: "38%",
+    left: "14%",
+    width: 1.5,
+    height: 1.5,
+    borderRadius: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.5)",
+  },
+  warmEmberGlow: {
+    position: "absolute",
+    top: "26%",
+    alignSelf: "center",
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: "rgba(217, 119, 6, 0.08)",
   },
 });

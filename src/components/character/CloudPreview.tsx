@@ -61,6 +61,8 @@ export interface CloudPreviewProps {
   debugTelemetry?: boolean;
   presentation?: "hardware" | "integrated";
   characterScale?: number;
+  onDoubleTap?: () => void;
+  onTap?: () => void;
   onTelemetry?: (telemetry: DevLabTelemetry) => void;
 }
 
@@ -86,6 +88,8 @@ export function CloudPreview({
   debugTelemetry = false,
   presentation = "integrated",
   characterScale = 0.68,
+  onDoubleTap,
+  onTap,
   onTelemetry,
 }: CloudPreviewProps) {
   const native = useRef<WebView>(null);
@@ -201,20 +205,36 @@ export function CloudPreview({
   const onNativeMessage = useCallback(
     (event: WebViewMessageEvent) => {
       try {
-        handleTelemetry(JSON.parse(event.nativeEvent.data));
+        const data = JSON.parse(event.nativeEvent.data);
+        if (data && data.type === "cloudDoubleTap") {
+          onDoubleTap?.();
+        } else if (data && data.type === "cloudTap") {
+          onTap?.();
+        } else {
+          handleTelemetry(data);
+        }
       } catch {
         // Runtime only emits JSON telemetry through this channel.
       }
     },
-    [handleTelemetry],
+    [handleTelemetry, onDoubleTap, onTap],
   );
 
   useEffect(() => {
     if (Platform.OS !== "web") return;
-    const handler = (event: MessageEvent) => handleTelemetry(event.data);
+    const handler = (event: MessageEvent) => {
+      const data = event.data;
+      if (data && data.type === "cloudDoubleTap") {
+        onDoubleTap?.();
+      } else if (data && data.type === "cloudTap") {
+        onTap?.();
+      } else {
+        handleTelemetry(data);
+      }
+    };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [handleTelemetry]);
+  }, [handleTelemetry, onDoubleTap, onTap]);
 
   if (presentation === "integrated") {
     return (

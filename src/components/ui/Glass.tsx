@@ -492,26 +492,89 @@ export function StatusDot({
 }
 
 // ---------------------------------------------------------------------------
-// 9. GlassOrbFrame: Atmospheric glass sphere enclosing Cherri on Home
-// Crucial: pointerEvents="none" so touches reach the live canvas inside!
+// 9. GlassOrbFrame: Apple-like optical glass sphere enclosing Cherri on Home
+// Features:
+// - Completely transparent central optical lens
+// - Specular bright outer rim (1.0px) with soft celestial bloom
+// - Concentric double refraction edge (2.5px inset, delicate lilac/blue caustics)
+// - Top-left delicate specular crescent glare arc
+// - Top-left secondary caustic glint
+// - Bottom-right opposing warm sunset bounce highlight
+// - Translucent shadow-receiving ground lens in bottom ~28% so contact shadow
+//   contrasts vividly without covering the background
+// - Crucial: ALL decorative overlays have pointerEvents="none" so touches reach
+//   the live canvas inside!
 // ---------------------------------------------------------------------------
 export function GlassOrbFrame({
   size,
+  environment,
   children,
 }: {
   size: number;
+  environment?: string;
   children: React.ReactNode;
 }) {
-  return (
-    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
-      {/* Live Cloud Character sits inside */}
-      {children}
+  const envNorm = (environment || "scenic").toLowerCase();
+  const isSand = envNorm === "zen" || envNorm === "sand" || envNorm === "warm-stone";
+  const isDark = envNorm === "dark" || envNorm === "amoled" || envNorm === "sky";
 
-      {/* Decorative luminous glass rim (must ignore pointer events!) */}
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        alignItems: "center",
+        justifyContent: "center",
+        position: "relative",
+      }}
+    >
+      {/* 1. BACK OPTICAL LAYER: Subtle Ground Shadow Receiving Disc (behind character) */}
       <View
         pointerEvents="none"
         style={[
-          styles.orbRim,
+          styles.orbGroundReceivingLens,
+          {
+            bottom: size * 0.05,
+            width: size * 0.84,
+            height: size * 0.30,
+            borderRadius: size * 0.42,
+          },
+        ]}
+      >
+        <LinearGradient
+          colors={
+            isSand
+              ? [
+                  "rgba(255, 245, 230, 0.02)",
+                  "rgba(221, 203, 181, 0.22)",
+                  "rgba(185, 155, 122, 0.08)",
+                ]
+              : isDark
+                ? [
+                    "rgba(255, 255, 255, 0.01)",
+                    "rgba(140, 180, 255, 0.14)",
+                    "rgba(70, 120, 240, 0.04)",
+                  ]
+                : [
+                    "rgba(255, 255, 255, 0.02)",
+                    "rgba(255, 235, 215, 0.18)",
+                    "rgba(200, 175, 255, 0.06)",
+                  ]
+          }
+          locations={[0, 0.58, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
+
+      {/* 2. Live Cloud Character (Canvas / WebView receiving touches) */}
+      {children}
+
+      {/* 3. FRONT OPTICAL LAYER: Specular Glass Lens Overlays (must ignore pointer events!) */}
+      {/* 3A. Outer Ultra-Thin Specular Rim & Soft Sky Bloom */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.orbOuterSpecularRim,
           {
             width: size,
             height: size,
@@ -520,26 +583,65 @@ export function GlassOrbFrame({
         ]}
       />
 
-      {/* Subtle top specular crescent highlight */}
+      {/* 3B. Concentric Double Refraction Edge (Lilac/amethyst internal refraction) */}
       <View
         pointerEvents="none"
         style={[
-          styles.orbTopHighlight,
+          styles.orbDoubleRefractionEdge,
           {
-            width: size * 0.60,
-            top: 2,
+            width: size - 5,
+            height: size - 5,
+            borderRadius: (size - 5) / 2,
           },
         ]}
       />
 
-      {/* Subtle warm sunset reflection at bottom of sphere */}
+      {/* 3C. Faint Inner Shadow / Sphere Depth Vignette */}
       <View
         pointerEvents="none"
         style={[
-          styles.orbBottomReflection,
+          styles.orbInnerDepthVignette,
           {
-            width: size * 0.50,
-            bottom: 4,
+            width: size - 2,
+            height: size - 2,
+            borderRadius: (size - 2) / 2,
+          },
+        ]}
+      />
+
+      {/* 3D. Top-Left Delicate Specular Glare Arc */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.orbTopSpecularArc,
+          {
+            width: size * 0.54,
+            top: 3,
+          },
+        ]}
+      />
+
+      {/* 3E. Secondary Top-Left Lilac Caustic Highlight */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.orbLilacCausticGlint,
+          {
+            width: size * 0.22,
+            top: 5.5,
+            left: size * 0.22,
+          },
+        ]}
+      />
+
+      {/* 3F. Bottom-Right Opposing Warm Sunset Reflection */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.orbBottomWarmReflection,
+          {
+            width: size * 0.46,
+            bottom: 4.5,
           },
         ]}
       />
@@ -631,24 +733,48 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
   },
-  orbRim: {
+  orbGroundReceivingLens: {
     position: "absolute",
-    borderWidth: 1.2,
-    borderColor: "rgba(255, 255, 255, 0.32)",
-    shadowColor: "#388BFF",
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
+    overflow: "hidden",
   },
-  orbTopHighlight: {
+  orbOuterSpecularRim: {
+    position: "absolute",
+    borderWidth: 1.0,
+    borderColor: "rgba(255, 255, 255, 0.42)",
+    shadowColor: "#8EB5FF",
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  orbDoubleRefractionEdge: {
+    position: "absolute",
+    borderWidth: 0.75,
+    borderColor: "rgba(196, 165, 255, 0.22)",
+  },
+  orbInnerDepthVignette: {
+    position: "absolute",
+    borderWidth: 1.4,
+    borderColor: "rgba(10, 16, 32, 0.16)",
+  },
+  orbTopSpecularArc: {
     position: "absolute",
     height: 1.5,
     borderRadius: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.55)",
+    backgroundColor: "rgba(255, 255, 255, 0.65)",
+    shadowColor: "#FFFFFF",
+    shadowOpacity: 0.5,
+    shadowRadius: 3,
   },
-  orbBottomReflection: {
+  orbLilacCausticGlint: {
     position: "absolute",
-    height: 1.5,
+    height: 1.0,
+    borderRadius: 0.5,
+    backgroundColor: "rgba(200, 180, 255, 0.45)",
+  },
+  orbBottomWarmReflection: {
+    position: "absolute",
+    height: 1.2,
     borderRadius: 1,
-    backgroundColor: "rgba(255, 215, 185, 0.30)",
+    backgroundColor: "rgba(255, 215, 185, 0.24)",
   },
 });

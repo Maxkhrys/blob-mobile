@@ -40,19 +40,21 @@ export function Screen({
   header,
   scrollable = true,
   variant = "calm",
+  environment,
   contentPaddingBottom,
 }: {
   children: React.ReactNode;
   header?: React.ReactNode;
   scrollable?: boolean;
   variant?: AtmosphericVariant;
+  environment?: string;
   contentPaddingBottom?: number;
 }) {
   const defaultBottom = useTabBarInset();
   const bottomPadding = contentPaddingBottom !== undefined ? contentPaddingBottom : defaultBottom;
 
   return (
-    <AtmosphericBackground variant={variant}>
+    <AtmosphericBackground variant={variant} environment={environment}>
       <SafeAreaView
         edges={["top", "left", "right"]}
         style={{ flex: 1, backgroundColor: "transparent" }}

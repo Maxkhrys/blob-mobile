@@ -5,7 +5,15 @@
 
 export type DisplayMode = 'dark' | 'warm' | 'brown';
 
-export type EnvironmentId = 'zen' | 'dark' | 'sky' | 'warm';
+export type EnvironmentId =
+  | 'scenic'
+  | 'zen'
+  | 'dark'
+  | 'warm'
+  | 'sand'
+  | 'amoled'
+  | 'sky'
+  | 'warm-glow';
 
 export interface EnvironmentPreset {
   id: EnvironmentId;
