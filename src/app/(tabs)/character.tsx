@@ -1,32 +1,44 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { View, ScrollView, TextInput, Pressable, useWindowDimensions, StyleSheet } from "react-native";
+import {
+  View,
+  ScrollView,
+  Text,
+  Pressable,
+  useWindowDimensions,
+  StyleSheet,
+} from "react-native";
+import { useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import Slider from "@react-native-community/slider";
 import { useAppStore } from "../../store/AppContext";
 import { CloudPreview } from "../../components/character/CloudPreview";
 import { ColourSwatchPicker } from "../../components/character/ColourSwatchPicker";
 import { EnvironmentPicker } from "../../components/character/EnvironmentPicker";
-import { SliderControl } from "../../components/common/SliderControl";
+import { Screen } from "../../components/ui/Kit";
 import {
-  Screen,
-  Section,
-  Copy,
-  Field,
-  Tap,
-  Surface,
-  layout,
-} from "../../components/ui/Kit";
+  GlassSurface,
+  GlassCard,
+  GlassCircleButton,
+  GlassSegmentedControl,
+  GlowButton,
+} from "../../components/ui/Glass";
+import { useFeedback } from "../../services/feedback/FeedbackProvider";
 import {
-  EXPRESSION_FILTERS,
   ALL_BEHAVIOURS,
   ExpressionCategory,
 } from "../../domain/expressions/catalog";
-import {
-  CLOUD_SLIDERS,
-  CLOUD_SLIDER_GROUPS,
-  CloudSliderDef,
-} from "../../domain/character/cloudSliders";
-import { useTheme } from "../../constants/theme";
-import { useFeedback } from "../../services/feedback/FeedbackProvider";
+import { CloudColourId } from "../../types";
+
+type StudioTab = "expressions" | "colours" | "behaviour";
+type MoodChip = "Calm" | "Happy" | "Curious" | "Sleepy" | "Focused";
+
+const MOOD_CHIPS: readonly { label: MoodChip; category: ExpressionCategory; defaultId: string; desc: string }[] = [
+  { label: "Calm", category: "Idle", defaultId: "FLOAT_DRIFT", desc: "Content and relaxed." },
+  { label: "Happy", category: "Emotion", defaultId: "HAPPY_BOUNCE", desc: "Joyful and bouncy." },
+  { label: "Curious", category: "Action", defaultId: "CURIOUS_DOUBLE_TAKE", desc: "Observant and alert." },
+  { label: "Sleepy", category: "Action", defaultId: "SLEEPY_YAWN", desc: "Drowsy and cozy." },
+  { label: "Focused", category: "Emotion", defaultId: "NOD_YES", desc: "Attentive and steady." },
+];
 
 export default function CharacterScreen() {
   const {
@@ -36,552 +48,448 @@ export default function CharacterScreen() {
     setDeviceBrightness,
     cloudSettings,
     updateCloudSettings,
-    resetCloudSettings,
     triggerBehaviour,
     activeBehaviourId,
   } = useAppStore();
-  const c = useTheme();
+
+  const router = useRouter();
   const feedback = useFeedback();
   const { width } = useWindowDimensions();
 
-  const [panel, setPanel] = useState<"look" | "behaviours" | "lab">("look");
-  const [selectedFilter, setSelectedFilter] = useState<ExpressionCategory>("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeReactionToken, setActiveReactionToken] = useState(0);
+  const [currentTab, setCurrentTab] = useState<StudioTab>("expressions");
+  const [selectedMood, setSelectedMood] = useState<MoodChip>("Calm");
+  const [activeExprIndex, setActiveExprIndex] = useState(0);
   const [playingId, setPlayingId] = useState<string>("");
+  const [animationSpeed, setAnimationSpeed] = useState<"Normal" | "Energetic" | "Gentle">("Normal");
+  const [intensity, setIntensity] = useState(device.brightness ?? 92);
 
-  const [activeLabGroup, setActiveLabGroup] = useState<
-    "params" | "colour" | "motion" | "trails" | "face"
-  >("params");
-
-  const [presetName, setPresetName] = useState("");
-  const [saved, setSaved] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);
   }, []);
 
-  const trigger = (id: string) => {
-    feedback("tick");
-    if (timer.current) clearTimeout(timer.current);
-    setPlayingId(id);
-    setActiveReactionToken((t) => t + 1);
-    triggerBehaviour(id);
-    timer.current = setTimeout(() => setPlayingId(""), 2400);
-  };
-
-  const filteredBehaviours = useMemo(() => {
-    let list =
-      selectedFilter === "ALL"
-        ? ALL_BEHAVIOURS
-        : ALL_BEHAVIOURS.filter((b) => b.category === selectedFilter);
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      list = list.filter(
-        (b) =>
-          b.label.toLowerCase().includes(q) ||
-          b.hint.toLowerCase().includes(q) ||
-          b.id.toLowerCase().includes(q)
-      );
-    }
-    return list;
-  }, [selectedFilter, searchQuery]);
-
-  const labSliders = useMemo(
-    () => CLOUD_SLIDERS.filter((s) => s.group === activeLabGroup),
-    [activeLabGroup]
+  // Filter behaviours for active mood
+  const currentMoodMeta = useMemo(
+    () => MOOD_CHIPS.find((m) => m.label === selectedMood) || MOOD_CHIPS[0],
+    [selectedMood],
   );
 
-  const getSliderVal = (slider: CloudSliderDef): number => {
-    if (slider.group === "face") {
-      return (cloudSettings.face as any)[slider.key] ?? slider.fallback;
-    }
-    return (
-      (cloudSettings as any)[slider.group]?.[slider.key] ?? slider.fallback
+  const moodBehaviours = useMemo(() => {
+    const list = ALL_BEHAVIOURS.filter(
+      (b) => b.category === currentMoodMeta.category || b.id === currentMoodMeta.defaultId,
     );
+    return list.length ? list : ALL_BEHAVIOURS.slice(0, 8);
+  }, [currentMoodMeta]);
+
+  const activeExpression = moodBehaviours[activeExprIndex] || moodBehaviours[0];
+
+  const handleTriggerExpression = (id?: string) => {
+    const targetId = id || activeExpression?.id || "FLOAT_DRIFT";
+    feedback("click");
+    if (timer.current) clearTimeout(timer.current);
+    setPlayingId(targetId);
+    triggerBehaviour(targetId);
+    timer.current = setTimeout(() => setPlayingId(""), 2500);
   };
 
-  const adjustSliderVal = (slider: CloudSliderDef, delta: number) => {
+  const handlePrevExpression = () => {
     feedback("tick");
-    const current = getSliderVal(slider);
-    const updated = Math.min(
-      slider.max,
-      Math.max(slider.min, Number((current + delta).toFixed(3)))
-    );
-    if (slider.group === "face") {
-      updateCloudSettings({
-        face: {
-          ...cloudSettings.face,
-          [slider.key]: updated,
-        },
-      });
-    } else {
-      updateCloudSettings({
-        [slider.group]: {
-          ...(cloudSettings as any)[slider.group],
-          [slider.key]: updated,
-        },
-      });
-    }
+    const nextIdx = activeExprIndex > 0 ? activeExprIndex - 1 : moodBehaviours.length - 1;
+    setActiveExprIndex(nextIdx);
+    handleTriggerExpression(moodBehaviours[nextIdx]?.id);
   };
+
+  const handleNextExpression = () => {
+    feedback("tick");
+    const nextIdx = activeExprIndex < moodBehaviours.length - 1 ? activeExprIndex + 1 : 0;
+    setActiveExprIndex(nextIdx);
+    handleTriggerExpression(moodBehaviours[nextIdx]?.id);
+  };
+
+  const cycleSpeed = () => {
+    feedback("tick");
+    const next = animationSpeed === "Normal" ? "Energetic" : animationSpeed === "Energetic" ? "Gentle" : "Normal";
+    setAnimationSpeed(next);
+    const speedVal = next === "Energetic" ? 1.3 : next === "Gentle" ? 0.7 : 1.0;
+    updateCloudSettings({
+      motion: {
+        ...cloudSettings.motion,
+        floatAmount: (cloudSettings.motion?.floatAmount ?? 4) * speedVal,
+      },
+    });
+  };
+
+  const handleIntensityChange = (val: number) => {
+    setIntensity(Math.round(val));
+    setDeviceBrightness(Math.round(val));
+  };
+
+  const previewSize = Math.min(width - 96, 210);
 
   return (
-    <Screen
-      header={
-        <>
-          <View style={layout.between}>
-            <Copy size={20} weight="700">
-              Cherri Studio
-            </Copy>
-            {playingId ? (
-              <View
-                style={{
-                  paddingHorizontal: 8,
-                  paddingVertical: 3,
-                  borderRadius: 10,
-                  backgroundColor: c.accent,
-                }}
-              >
-                <Copy size={10} weight="700" style={{ color: "#ffffff" }}>
-                  {playingId}
-                </Copy>
-              </View>
-            ) : null}
+    <Screen scrollable variant="calm">
+      {/* 1. Sheet Header with Grabber, Title, Subtitle, and Close Button */}
+      <View style={styles.sheetHeader}>
+        <View style={styles.grabber} />
+        <View style={styles.headerTitleRow}>
+          <View style={{ gap: 2 }}>
+            <Text style={styles.screenTitle}>Cherri</Text>
+            <Text style={styles.screenSubtitle}>
+              Edit mood, appearance and behaviour.
+            </Text>
           </View>
-
-          {/* Top Live Display with Touch/Drag */}
-          <View style={{ alignItems: "center" }}>
-            <CloudPreview
-              size={Math.min(width - 64, 226)}
-              colourId={profile.characterColour}
-              environment={profile.environment}
-              behaviourId={playingId || activeBehaviourId || undefined}
-              reactionToken={activeReactionToken}
-              cloudSettings={cloudSettings}
-            />
-          </View>
-
-          {/* Three Mode Segment Tabs */}
-          <View
-            style={[
-              layout.row,
-              {
-                backgroundColor: c.backgroundSecondary,
-                borderRadius: 16,
-                padding: 4,
-              },
-            ]}
+          <GlassCircleButton
+            label="Close"
+            size={36}
+            onPress={() => router.push("/(tabs)")}
           >
-            {(["look", "behaviours", "lab"] as const).map((p) => {
-              const label =
-                p === "look"
-                  ? "Customize"
-                  : p === "behaviours"
-                  ? `Actions (${ALL_BEHAVIOURS.length})`
-                  : "Lab Sliders";
-              const active = panel === p;
-              return (
-                <Tap
-                  key={p}
-                  label={label}
-                  selected={active}
-                  onPress={() => {
-                    feedback("tick");
-                    setPanel(p);
-                  }}
-                  style={{
-                    flex: 1,
-                    borderRadius: 12,
-                    backgroundColor: active ? c.surface : "transparent",
-                    paddingVertical: 8,
-                  }}
-                >
-                  <Copy
-                    weight={active ? "700" : "500"}
-                    size={12}
-                    style={{ textAlign: "center" }}
-                  >
-                    {label}
-                  </Copy>
-                </Tap>
-              );
-            })}
-          </View>
-        </>
-      }
-    >
-      {panel === "look" ? (
-        <>
-          <Field
-            label="Cherri name"
-            value={profile.characterName}
-            onChangeText={(characterName) => updateProfile({ characterName })}
-            placeholder="Cherri"
-          />
-          <Section title="Colour Preset">
-            <ColourSwatchPicker
-              selectedColour={profile.characterColour}
-              onSelectColour={(characterColour) =>
-                updateProfile({ characterColour })
-              }
-            />
-          </Section>
-          <Section title="Environment Mode">
-            <EnvironmentPicker
-              selectedEnvironment={profile.environment}
-              onSelectEnvironment={(environment) =>
-                updateProfile({ environment })
-              }
-            />
-          </Section>
-          <Surface>
-            <SliderControl
-              value={device.brightness}
-              onChange={setDeviceBrightness}
-            />
-          </Surface>
-          <Section title="Saved Looks">
-            <Copy muted size={13}>
-              Save your favourite combination of colour and scene.
-            </Copy>
-            <Field
-              label="Look name"
-              value={presetName}
-              onChangeText={(t) => {
-                setPresetName(t);
-                setSaved(false);
-              }}
-              placeholder="Midnight Velvet"
-            />
-            <Tap
-              label="Save this look"
-              disabled={!presetName.trim() || profile.savedPresets.length >= 20}
-              onPress={() => {
-                feedback("click");
-                void updateProfile({
-                  savedPresets: [
-                    ...profile.savedPresets,
-                    {
-                      id: `look-${Date.now()}`,
-                      name: presetName.trim(),
-                      colourId: profile.characterColour,
-                      environment: profile.environment,
-                    },
-                  ],
-                });
-                setPresetName("");
-                setSaved(true);
-              }}
-            >
-              <Copy weight="600" style={{ color: c.accent }}>
-                {saved ? "Look saved" : "Save this look"}
-              </Copy>
-            </Tap>
-            {profile.savedPresets.map((p) => (
-              <View key={p.id} style={layout.between}>
-                <Tap
-                  label={`Apply ${p.name}`}
-                  onPress={() => {
-                    feedback("tick");
-                    updateProfile({
-                      characterColour: p.colourId,
-                      environment: p.environment,
-                    });
-                  }}
-                  style={{ flex: 1 }}
-                >
-                  <Copy>{p.name}</Copy>
-                </Tap>
-                <Tap
-                  label={`Delete ${p.name}`}
-                  onPress={() =>
-                    updateProfile({
-                      savedPresets: profile.savedPresets.filter(
-                        (x) => x.id !== p.id
-                      ),
-                    })
-                  }
-                >
-                  <Copy muted size={13}>
-                    Remove
-                  </Copy>
-                </Tap>
-              </View>
-            ))}
-          </Section>
-        </>
-      ) : panel === "behaviours" ? (
-        <View style={{ gap: 14 }}>
-          {/* Search input */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-              backgroundColor: c.surface,
-              borderRadius: 14,
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-              borderWidth: 1,
-              borderColor: c.border,
-            }}
-          >
-            <Ionicons name="search" size={16} color={c.textSecondary} />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search 80+ behaviours..."
-              placeholderTextColor={c.textSecondary}
-              style={{ flex: 1, color: c.text, fontSize: 13 }}
-            />
-            {searchQuery ? (
-              <Pressable onPress={() => setSearchQuery("")}>
-                <Ionicons name="close-circle" size={16} color={c.textSecondary} />
-              </Pressable>
-            ) : null}
-          </View>
-
-          {/* Category Filter Chips */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
-          >
-            {EXPRESSION_FILTERS.map((cat) => {
-              const active = selectedFilter === cat;
-              return (
-                <Pressable
-                  key={cat}
-                  onPress={() => {
-                    feedback("tick");
-                    setSelectedFilter(cat);
-                  }}
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    borderRadius: 16,
-                    backgroundColor: active ? c.accent : c.surface,
-                    borderWidth: 1,
-                    borderColor: active ? c.accent : c.border,
-                  }}
-                >
-                  <Copy
-                    size={11}
-                    weight={active ? "700" : "500"}
-                    style={{ color: active ? "#ffffff" : c.text }}
-                  >
-                    {cat}
-                  </Copy>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-
-          {/* Behaviours Grid */}
-          <View style={layout.wrap}>
-            {filteredBehaviours.map((b) => {
-              const isPlaying = playingId === b.id;
-              return (
-                <Tap
-                  key={b.id}
-                  label={`Play ${b.label}`}
-                  selected={isPlaying}
-                  onPress={() => trigger(b.id)}
-                  style={{
-                    width: "48%",
-                    padding: 14,
-                    borderRadius: 16,
-                    backgroundColor: isPlaying ? c.accentMuted : c.surface,
-                    borderWidth: 1,
-                    borderColor: isPlaying ? c.accent : c.border,
-                    gap: 4,
-                  }}
-                >
-                  <View style={layout.between}>
-                    <Copy size={13} weight="600" numberOfLines={1}>
-                      {b.label}
-                    </Copy>
-                    <View
-                      style={{
-                        paddingHorizontal: 5,
-                        paddingVertical: 2,
-                        borderRadius: 6,
-                        backgroundColor: isPlaying ? c.accent : c.backgroundSecondary,
-                      }}
-                    >
-                      <Copy
-                        size={9}
-                        weight="700"
-                        style={{ color: isPlaying ? "#ffffff" : c.textSecondary }}
-                      >
-                        {b.category}
-                      </Copy>
-                    </View>
-                  </View>
-                  <Copy muted size={11} numberOfLines={1}>
-                    {b.hint}
-                  </Copy>
-                </Tap>
-              );
-            })}
-          </View>
+            <Ionicons name="close" size={18} color="#FFFFFF" />
+          </GlassCircleButton>
         </View>
-      ) : (
-        /* Character Lab Sliders Panel */
-        <View style={{ gap: 14 }}>
-          <View style={layout.between}>
-            <Copy size={13} muted>
-              Edit all 30+ volumetric parameters in real-time
-            </Copy>
-            <Tap
-              label="Reset Defaults"
-              onPress={() => {
-                feedback("click");
-                resetCloudSettings();
-              }}
-            >
-              <View
-                style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                  borderRadius: 12,
-                  backgroundColor: c.surface,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                }}
-              >
-                <Copy size={11} weight="600" style={{ color: c.accent }}>
-                  Reset Defaults
-                </Copy>
-              </View>
-            </Tap>
-          </View>
+      </View>
 
-          {/* Lab Group Tabs */}
+      {/* 2. Main Segmented Control: Expressions | Colours | Behaviour */}
+      <GlassSegmentedControl
+        selected={currentTab}
+        onSelect={(tab) => setCurrentTab(tab)}
+        items={[
+          { id: "expressions", label: "Expressions" },
+          { id: "colours", label: "Colours" },
+          { id: "behaviour", label: "Behaviour" },
+        ]}
+        renderIcon={(tab, isSelected) => {
+          const color = isSelected ? "#FFFFFF" : "rgba(240, 244, 252, 0.65)";
+          if (tab === "expressions") {
+            return <Ionicons name="sparkles" size={15} color={color} />;
+          }
+          if (tab === "colours") {
+            return <Ionicons name="color-palette-outline" size={15} color={color} />;
+          }
+          return <Ionicons name="options-outline" size={15} color={color} />;
+        }}
+      />
+
+      {/* ------------------------------------------------------------- */}
+      {/* TAB 1: EXPRESSIONS (Matches Right Side Reference)             */}
+      {/* ------------------------------------------------------------- */}
+      {currentTab === "expressions" && (
+        <View style={{ gap: 16 }}>
+          {/* Mood Filter Capsules */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 6 }}
+            contentContainerStyle={styles.moodChipsScroll}
           >
-            {CLOUD_SLIDER_GROUPS.map((g) => {
-              const active = activeLabGroup === g.id;
+            {MOOD_CHIPS.map((chip) => {
+              const isSelected = selectedMood === chip.label;
               return (
                 <Pressable
-                  key={g.id}
+                  key={chip.label}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: isSelected }}
                   onPress={() => {
                     feedback("tick");
-                    setActiveLabGroup(g.id);
+                    setSelectedMood(chip.label);
+                    setActiveExprIndex(0);
+                    handleTriggerExpression(chip.defaultId);
                   }}
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    borderRadius: 16,
-                    backgroundColor: active ? c.accent : c.surface,
-                    borderWidth: 1,
-                    borderColor: active ? c.accent : c.border,
-                  }}
+                  style={[
+                    styles.moodChip,
+                    {
+                      backgroundColor: isSelected
+                        ? "#388BFF"
+                        : "rgba(255, 255, 255, 0.08)",
+                      borderColor: isSelected
+                        ? "#388BFF"
+                        : "rgba(255, 255, 255, 0.16)",
+                    },
+                  ]}
                 >
-                  <Copy
-                    size={11}
-                    weight={active ? "700" : "500"}
-                    style={{ color: active ? "#ffffff" : c.text }}
+                  <Text
+                    style={[
+                      styles.moodChipText,
+                      {
+                        color: isSelected ? "#FFFFFF" : "rgba(240, 244, 252, 0.70)",
+                        fontWeight: isSelected ? "700" : "500",
+                      },
+                    ]}
                   >
-                    {g.label}
-                  </Copy>
+                    {chip.label}
+                  </Text>
                 </Pressable>
               );
             })}
           </ScrollView>
 
-          {/* Lab Sliders */}
-          <View style={{ gap: 10 }}>
-            {labSliders.map((slider) => {
-              const val = getSliderVal(slider);
-              const range = slider.max - slider.min;
-              const pct = Math.max(
-                0,
-                Math.min(100, ((val - slider.min) / range) * 100)
-              );
-              const step = slider.step || (range > 10 ? 1 : 0.05);
+          {/* Large Central Preview Card with Live Cherri & Stepper Arrows */}
+          <GlassCard style={styles.previewCard}>
+            <View style={styles.previewCardInner}>
+              <GlassCircleButton
+                label="Previous expression"
+                size={38}
+                onPress={handlePrevExpression}
+              >
+                <Ionicons name="chevron-back" size={20} color="#FFFFFF" />
+              </GlassCircleButton>
 
+              <View style={{ alignItems: "center" }}>
+                <CloudPreview
+                  size={previewSize}
+                  colourId={profile.characterColour}
+                  environment={profile.environment}
+                  behaviourId={playingId || activeBehaviourId || activeExpression?.id}
+                  cloudSettings={cloudSettings}
+                />
+              </View>
+
+              <GlassCircleButton
+                label="Next expression"
+                size={38}
+                onPress={handleNextExpression}
+              >
+                <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+              </GlassCircleButton>
+            </View>
+
+            {/* Expression Name & Description */}
+            <View style={{ alignItems: "center", gap: 3, marginTop: 4 }}>
+              <Text style={styles.expressionTitle}>
+                {activeExpression?.label || selectedMood}
+              </Text>
+              <Text style={styles.expressionDescription}>
+                {activeExpression?.hint || currentMoodMeta.desc}
+              </Text>
+            </View>
+          </GlassCard>
+
+          {/* Mini Expression Thumbnail / Strip */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.expressionStripScroll}
+          >
+            {moodBehaviours.map((item, idx) => {
+              const isSelected = idx === activeExprIndex;
               return (
-                <View
-                  key={slider.key}
-                  style={{
-                    padding: 12,
-                    borderRadius: 14,
-                    backgroundColor: c.surface,
-                    borderWidth: 1,
-                    borderColor: c.border,
-                    gap: 8,
+                <Pressable
+                  key={item.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.label}
+                  onPress={() => {
+                    feedback("tick");
+                    setActiveExprIndex(idx);
+                    handleTriggerExpression(item.id);
                   }}
+                  style={[
+                    styles.miniCard,
+                    {
+                      borderColor: isSelected
+                        ? "#388BFF"
+                        : "rgba(255, 255, 255, 0.12)",
+                      backgroundColor: isSelected
+                        ? "rgba(56, 139, 255, 0.18)"
+                        : "rgba(255, 255, 255, 0.06)",
+                    },
+                  ]}
                 >
-                  <View style={layout.between}>
-                    <Copy size={12} weight="600">
-                      {slider.label}
-                    </Copy>
-                    <Copy size={12} weight="700" style={{ color: c.accent }}>
-                      {val.toFixed(slider.step >= 1 ? 0 : 2)}
-                    </Copy>
-                  </View>
-
-                  {/* Progress track */}
-                  <View
-                    style={{
-                      height: 5,
-                      borderRadius: 3,
-                      backgroundColor: c.border,
-                      overflow: "hidden",
-                    }}
+                  <Ionicons
+                    name={isSelected ? "sparkles" : "happy-outline"}
+                    size={20}
+                    color={isSelected ? "#388BFF" : "rgba(240, 244, 252, 0.70)"}
+                  />
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.miniCardText,
+                      {
+                        color: isSelected ? "#FFFFFF" : "rgba(240, 244, 252, 0.60)",
+                      },
+                    ]}
                   >
-                    <View
-                      style={{
-                        width: `${pct}%`,
-                        height: "100%",
-                        backgroundColor: c.accent,
-                      }}
-                    />
-                  </View>
-
-                  {/* Steppers */}
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <Copy size={10} muted>
-                      {slider.min}
-                    </Copy>
-                    <View style={{ flexDirection: "row", gap: 6 }}>
-                      <Pressable
-                        onPress={() => adjustSliderVal(slider, -step)}
-                        style={styles.stepBtn}
-                      >
-                        <Copy size={13} weight="600">
-                          -
-                        </Copy>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => adjustSliderVal(slider, step)}
-                        style={styles.stepBtn}
-                      >
-                        <Copy size={13} weight="600">
-                          +
-                        </Copy>
-                      </Pressable>
-                    </View>
-                    <Copy size={10} muted>
-                      {slider.max}
-                    </Copy>
-                  </View>
-                </View>
+                    {item.label}
+                  </Text>
+                </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
+
+          {/* Intensity Slider (Real runtime brightness & amplitude mapping) */}
+          <GlassSurface style={styles.controlRowCard}>
+            <View style={styles.controlRowHeader}>
+              <Text style={styles.controlRowLabel}>Intensity</Text>
+              <Text style={styles.controlRowValue}>{intensity}%</Text>
+            </View>
+            <View style={styles.sliderWrapper}>
+              <Ionicons
+                name="sunny-outline"
+                size={18}
+                color="rgba(240, 244, 252, 0.65)"
+              />
+              <Slider
+                style={{ flex: 1, height: 32 }}
+                minimumValue={10}
+                maximumValue={100}
+                value={intensity}
+                onValueChange={handleIntensityChange}
+                minimumTrackTintColor="#388BFF"
+                maximumTrackTintColor="rgba(255, 255, 255, 0.18)"
+                thumbTintColor="#FFFFFF"
+              />
+            </View>
+          </GlassSurface>
+
+          {/* Animation Speed Selector Card */}
+          <GlassSurface style={styles.controlRowCard}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Animation speed: ${animationSpeed}`}
+              onPress={cycleSpeed}
+              style={styles.speedRowPressable}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <View style={styles.speedIconBox}>
+                  <Ionicons name="pulse-outline" size={17} color="#FFFFFF" />
+                </View>
+                <Text style={styles.controlRowLabel}>Animation Speed</Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Text style={styles.controlRowValue}>{animationSpeed}</Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color="rgba(240, 244, 252, 0.45)"
+                />
+              </View>
+            </Pressable>
+          </GlassSurface>
+
+          {/* Large Bottom Action: Preview Mood / Replay Expression */}
+          <GlowButton
+            title="Preview Mood"
+            icon={<Ionicons name="play" size={17} color="#FFFFFF" />}
+            onPress={() => handleTriggerExpression()}
+            style={{ marginTop: 4 }}
+          />
+        </View>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* TAB 2: COLOURS & ENVIRONMENT                                 */}
+      {/* ------------------------------------------------------------- */}
+      {currentTab === "colours" && (
+        <View style={{ gap: 18 }}>
+          <GlassCard>
+            <Text style={styles.sectionHeader}>Cloud Palette</Text>
+            <ColourSwatchPicker
+              value={profile.characterColour}
+              onChange={(col: CloudColourId) => {
+                feedback("tick");
+                updateProfile({ characterColour: col });
+              }}
+            />
+          </GlassCard>
+
+          <GlassCard>
+            <Text style={styles.sectionHeader}>Environment Backdrop</Text>
+            <EnvironmentPicker
+              value={profile.environment}
+              onChange={(env) => {
+                feedback("tick");
+                updateProfile({ environment: env });
+              }}
+            />
+          </GlassCard>
+        </View>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* TAB 3: BEHAVIOUR & DEV LAB SHORTCUT                          */}
+      {/* ------------------------------------------------------------- */}
+      {currentTab === "behaviour" && (
+        <View style={{ gap: 16 }}>
+          <GlassCard>
+            <Text style={styles.sectionHeader}>Liveliness & Presence</Text>
+
+            {/* Float & Bobbing */}
+            <View style={styles.behaviourRow}>
+              <Text style={styles.behaviourLabel}>Float Drift</Text>
+              <Pressable
+                onPress={() => {
+                  feedback("tick");
+                  updateCloudSettings({
+                    motion: {
+                      ...cloudSettings.motion,
+                      driftSpeed: (cloudSettings.motion?.driftSpeed ?? 0.00035) * 1.25,
+                    },
+                  });
+                }}
+                style={styles.actionChip}
+              >
+                <Text style={styles.actionChipText}>Enhance</Text>
+              </Pressable>
+            </View>
+
+            {/* Cloud Fluffiness */}
+            <View style={styles.behaviourRow}>
+              <Text style={styles.behaviourLabel}>Fluffiness</Text>
+              <Pressable
+                onPress={() => {
+                  feedback("tick");
+                  const current = cloudSettings.params?.fluffiness ?? 1.05;
+                  updateCloudSettings({
+                    params: {
+                      ...cloudSettings.params,
+                      fluffiness: current >= 1.2 ? 0.85 : current + 0.15,
+                    },
+                  });
+                }}
+                style={styles.actionChip}
+              >
+                <Text style={styles.actionChipText}>Toggle</Text>
+              </Pressable>
+            </View>
+
+            {/* Mist Trails */}
+            <View style={styles.behaviourRow}>
+              <Text style={styles.behaviourLabel}>Mist Atmosphere</Text>
+              <Pressable
+                onPress={() => {
+                  feedback("tick");
+                  const cur = cloudSettings.trails?.trailStrength ?? 0.6;
+                  updateCloudSettings({
+                    trails: {
+                      ...cloudSettings.trails,
+                      trailStrength: cur > 0.8 ? 0.3 : 0.9,
+                    },
+                  });
+                }}
+                style={styles.actionChip}
+              >
+                <Text style={styles.actionChipText}>Cycle</Text>
+              </Pressable>
+            </View>
+          </GlassCard>
+
+          {/* Dev Lab Entry Button */}
+          <GlassCard style={{ alignItems: "center", gap: 10 }}>
+            <Text style={styles.devNoticeTitle}>Need Advanced Tuning?</Text>
+            <Text style={styles.devNoticeDesc}>
+              Physics springs, 3D turn kinematics, performance clips, and raw telemetry are in Dev Lab.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open Advanced Dev Lab"
+              onPress={() => {
+                feedback("click");
+                router.push("/dev-lab");
+              }}
+              style={styles.devLabButton}
+            >
+              <Ionicons name="terminal-outline" size={17} color="#FFFFFF" />
+              <Text style={styles.devLabButtonText}>Open Advanced Dev Lab</Text>
+            </Pressable>
+          </GlassCard>
         </View>
       )}
     </Screen>
@@ -589,12 +497,178 @@ export default function CharacterScreen() {
 }
 
 const styles = StyleSheet.create({
-  stepBtn: {
-    width: 34,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: "rgba(128,128,128,0.14)",
+  sheetHeader: {
+    gap: 12,
+    marginBottom: 6,
+  },
+  grabber: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255, 255, 255, 0.32)",
+    alignSelf: "center",
+  },
+  headerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  screenTitle: {
+    fontSize: 26,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    letterSpacing: -0.4,
+  },
+  screenSubtitle: {
+    fontSize: 13,
+    color: "rgba(240, 244, 252, 0.60)",
+  },
+  moodChipsScroll: {
+    flexDirection: "row",
+    gap: 8,
+    paddingVertical: 2,
+  },
+  moodChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 9999,
+    borderWidth: 1,
+  },
+  moodChipText: {
+    fontSize: 13,
+  },
+  previewCard: {
+    alignItems: "center",
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+  },
+  previewCardInner: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  expressionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  expressionDescription: {
+    fontSize: 12,
+    color: "rgba(240, 244, 252, 0.55)",
+  },
+  expressionStripScroll: {
+    flexDirection: "row",
+    gap: 10,
+    paddingVertical: 4,
+  },
+  miniCard: {
+    width: 78,
+    height: 72,
+    borderRadius: 16,
+    borderWidth: 1.2,
     alignItems: "center",
     justifyContent: "center",
+    gap: 6,
+    padding: 6,
+  },
+  miniCardText: {
+    fontSize: 10,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  controlRowCard: {
+    padding: 14,
+    gap: 10,
+  },
+  controlRowHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  controlRowLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  controlRowValue: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#388BFF",
+  },
+  sliderWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  speedRowPressable: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  speedIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.10)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sectionHeader: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginBottom: 8,
+  },
+  behaviourRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  behaviourLabel: {
+    fontSize: 14,
+    color: "rgba(240, 244, 252, 0.85)",
+  },
+  actionChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: "rgba(56, 139, 255, 0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(56, 139, 255, 0.45)",
+  },
+  actionChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#388BFF",
+  },
+  devNoticeTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  devNoticeDesc: {
+    fontSize: 12,
+    color: "rgba(240, 244, 252, 0.60)",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  devLabButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 9999,
+    backgroundColor: "rgba(255, 255, 255, 0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.22)",
+    marginTop: 4,
+  },
+  devLabButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
   },
 });

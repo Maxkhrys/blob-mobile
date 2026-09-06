@@ -1,43 +1,42 @@
 import React, { useState } from "react";
-import { View } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { useAppStore } from "../store/AppContext";
-import {
-  Screen,
-  Heading,
-  Copy,
-  Tap,
-  Section,
-  layout,
-} from "../components/ui/Kit";
+import { Screen, Copy, Tap, layout } from "../components/ui/Kit";
+import { GlassCard, GlassOrbFrame } from "../components/ui/Glass";
 import { CloudPreview } from "../components/character/CloudPreview";
 import { CANONICAL_PRODUCT_STATES } from "../domain/productStates/stateEmotionMap";
-import { useTheme } from "../constants/theme";
+
 export default function Simulator() {
   const { profile, drivers, proximity, setProximityState, resetProximity } =
     useAppStore();
-  const c = useTheme();
   const [driver, setDriver] = useState(drivers[0]?.id || "alex");
   const [direction, setDirection] = useState<
     "left" | "right" | "ahead" | "behind"
   >("ahead");
+
   return (
-    <Screen>
-      <Heading
-        title="Proximity simulator"
-        subtitle="Developer tools · local demo events"
-      />
-      <View style={{ alignItems: "center" }}>
-        <CloudPreview
-          size={250}
-          colourId={profile.characterColour}
-          environment={profile.environment}
-          proximityState={proximity.state}
-          driverYaw={
-            direction === "left" ? -0.5 : direction === "right" ? 0.5 : 0
-          }
-        />
+    <Screen variant="calm">
+      <View style={{ gap: 3, marginBottom: 4 }}>
+        <Text style={styles.title}>Proximity Simulator</Text>
+        <Text style={styles.subtitle}>Developer demo · local proximity events</Text>
       </View>
-      <Section title="Driver">
+
+      <View style={{ alignItems: "center", marginVertical: 6 }}>
+        <GlassOrbFrame size={220}>
+          <CloudPreview
+            size={210}
+            colourId={profile.characterColour}
+            environment={profile.environment}
+            proximityState={proximity.state}
+            driverYaw={
+              direction === "left" ? -0.5 : direction === "right" ? 0.5 : 0
+            }
+          />
+        </GlassOrbFrame>
+      </View>
+
+      <GlassCard>
+        <Text style={styles.cardHeader}>Target Driver</Text>
         <View style={layout.wrap}>
           {drivers.map((d) => (
             <Tap
@@ -46,17 +45,24 @@ export default function Simulator() {
               selected={driver === d.id}
               onPress={() => setDriver(d.id)}
               style={{
-                paddingHorizontal: 12,
-                backgroundColor: driver === d.id ? c.accentMuted : c.surface,
-                borderRadius: 12,
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                backgroundColor:
+                  driver === d.id ? "rgba(56, 139, 255, 0.25)" : "rgba(255, 255, 255, 0.08)",
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor:
+                  driver === d.id ? "#388BFF" : "rgba(255, 255, 255, 0.12)",
               }}
             >
-              <Copy>{d.name}</Copy>
+              <Copy weight={driver === d.id ? "700" : "500"}>{d.name}</Copy>
             </Tap>
           ))}
         </View>
-      </Section>
-      <Section title="Direction">
+      </GlassCard>
+
+      <GlassCard>
+        <Text style={styles.cardHeader}>Relative Direction</Text>
         <View style={layout.wrap}>
           {(["left", "right", "ahead", "behind"] as const).map((d) => (
             <Tap
@@ -65,47 +71,94 @@ export default function Simulator() {
               selected={direction === d}
               onPress={() => setDirection(d)}
               style={{
-                paddingHorizontal: 12,
-                backgroundColor: direction === d ? c.accentMuted : c.surface,
-                borderRadius: 12,
-              }}
-            >
-              <Copy>{d}</Copy>
-            </Tap>
-          ))}
-        </View>
-      </Section>
-      <Section title="Canonical states">
-        <View style={layout.wrap}>
-          {CANONICAL_PRODUCT_STATES.map((s) => (
-            <Tap
-              key={s.id}
-              label={`Simulate ${s.id}`}
-              selected={proximity.state === s.id}
-              onPress={() =>
-                setProximityState(
-                  s.id,
-                  driver,
-                  drivers.find((d) => d.id === driver)?.name,
-                  direction,
-                )
-              }
-              style={{
-                width: "47%",
-                padding: 12,
+                paddingHorizontal: 14,
+                paddingVertical: 8,
                 backgroundColor:
-                  proximity.state === s.id ? c.accentMuted : c.surface,
-                borderRadius: 12,
+                  direction === d ? "rgba(56, 139, 255, 0.25)" : "rgba(255, 255, 255, 0.08)",
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor:
+                  direction === d ? "#388BFF" : "rgba(255, 255, 255, 0.12)",
               }}
             >
-              <Copy size={13}>{s.id}</Copy>
+              <Copy weight={direction === d ? "700" : "500"}>{d}</Copy>
             </Tap>
           ))}
         </View>
-      </Section>
-      <Tap label="Reset simulation" onPress={resetProximity}>
-        <Copy>Reset simulation</Copy>
+      </GlassCard>
+
+      <GlassCard>
+        <Text style={styles.cardHeader}>Canonical Product States</Text>
+        <View style={layout.wrap}>
+          {CANONICAL_PRODUCT_STATES.map((s) => {
+            const active = proximity.state === s.id;
+            return (
+              <Tap
+                key={s.id}
+                label={`Simulate ${s.id}`}
+                selected={active}
+                onPress={() =>
+                  setProximityState(
+                    s.id,
+                    driver,
+                    drivers.find((d) => d.id === driver)?.name,
+                    direction,
+                  )
+                }
+                style={{
+                  width: "47%",
+                  padding: 12,
+                  backgroundColor: active
+                    ? "rgba(56, 139, 255, 0.25)"
+                    : "rgba(255, 255, 255, 0.08)",
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: active ? "#388BFF" : "rgba(255, 255, 255, 0.12)",
+                }}
+              >
+                <Copy size={13} weight={active ? "700" : "500"}>
+                  {s.id}
+                </Copy>
+              </Tap>
+            );
+          })}
+        </View>
+      </GlassCard>
+
+      <Tap
+        label="Reset simulation"
+        onPress={resetProximity}
+        style={{
+          paddingVertical: 12,
+          alignItems: "center",
+          backgroundColor: "rgba(255, 255, 255, 0.08)",
+          borderRadius: 16,
+          borderWidth: 1,
+          borderColor: "rgba(255, 255, 255, 0.15)",
+        }}
+      >
+        <Copy weight="600" style={{ color: "#388BFF" }}>
+          Reset Simulation
+        </Copy>
       </Tap>
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  title: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  subtitle: {
+    fontSize: 13,
+    color: "rgba(240, 244, 252, 0.60)",
+  },
+  cardHeader: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    marginBottom: 6,
+  },
+});

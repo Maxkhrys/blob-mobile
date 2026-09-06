@@ -16,6 +16,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../constants/theme";
 import { useFeedback } from "../../services/feedback/FeedbackProvider";
+import {
+  AtmosphericBackground,
+  AtmosphericVariant,
+} from "./AtmosphericBackground";
+
 export function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -28,68 +33,75 @@ export function useReducedMotion() {
   }, []);
   return reduced;
 }
+
 export function Screen({
   children,
   header,
   scrollable = true,
+  variant = "calm",
 }: {
   children: React.ReactNode;
   header?: React.ReactNode;
   scrollable?: boolean;
+  variant?: AtmosphericVariant;
 }) {
-  const c = useTheme();
   return (
-    <SafeAreaView
-      edges={["top", "left", "right"]}
-      style={{ flex: 1, backgroundColor: c.background }}
-    >
-      {header && (
-        <View
-          style={{
-            width: "100%",
-            maxWidth: 540,
-            alignSelf: "center",
-            paddingHorizontal: 24,
-            paddingTop: 16,
-            gap: 12,
-          }}
-        >
-          {header}
-        </View>
-      )}
-      {scrollable ? (
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            padding: 24,
-            paddingBottom: 36,
-            gap: 24,
-            width: "100%",
-            maxWidth: 540,
-            alignSelf: "center",
-          }}
-        >
-          {children}
-        </ScrollView>
-      ) : (
-        <View
-          style={{
-            flex: 1,
-            paddingHorizontal: 20,
-            paddingVertical: 12,
-            width: "100%",
-            maxWidth: 540,
-            alignSelf: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          {children}
-        </View>
-      )}
-    </SafeAreaView>
+    <AtmosphericBackground variant={variant}>
+      <SafeAreaView
+        edges={["top", "left", "right"]}
+        style={{ flex: 1, backgroundColor: "transparent" }}
+      >
+        {header && (
+          <View
+            style={{
+              width: "100%",
+              maxWidth: 540,
+              alignSelf: "center",
+              paddingHorizontal: 20,
+              paddingTop: 12,
+              gap: 12,
+            }}
+          >
+            {header}
+          </View>
+        )}
+        {scrollable ? (
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingHorizontal: 20,
+              paddingTop: 16,
+              paddingBottom: 110, // Ensure bottom content never gets hidden under floating dock
+              gap: 20,
+              width: "100%",
+              maxWidth: 540,
+              alignSelf: "center",
+            }}
+          >
+            {children}
+          </ScrollView>
+        ) : (
+          <View
+            style={{
+              flex: 1,
+              paddingHorizontal: 18,
+              paddingTop: 10,
+              paddingBottom: 100, // Safe room for floating glass dock
+              width: "100%",
+              maxWidth: 540,
+              alignSelf: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            {children}
+          </View>
+        )}
+      </SafeAreaView>
+    </AtmosphericBackground>
   );
 }
+
 export function Copy({
   children,
   size = 15,
@@ -111,7 +123,7 @@ export function Copy({
       numberOfLines={numberOfLines}
       style={{
         fontSize: size,
-        lineHeight: size * 1.4,
+        lineHeight: size * 1.38,
         color: muted ? c.textSecondary : c.text,
         fontWeight: weight,
         ...style,
@@ -121,6 +133,7 @@ export function Copy({
     </Text>
   );
 }
+
 export function Heading({
   title,
   subtitle,
@@ -129,14 +142,19 @@ export function Heading({
   subtitle?: string;
 }) {
   return (
-    <View style={{ gap: 6 }}>
-      <Copy size={32} weight="600" style={{ letterSpacing: -0.8 }}>
+    <View style={{ gap: 6, marginVertical: 4 }}>
+      <Copy size={30} weight="700" style={{ letterSpacing: -0.6 }}>
         {title}
       </Copy>
-      {subtitle && <Copy muted>{subtitle}</Copy>}
+      {subtitle && (
+        <Copy muted size={14} style={{ lineHeight: 20 }}>
+          {subtitle}
+        </Copy>
+      )}
     </View>
   );
 }
+
 export function Section({
   title,
   children,
@@ -145,14 +163,15 @@ export function Section({
   children: React.ReactNode;
 }) {
   return (
-    <View style={{ gap: 14 }}>
-      <Copy size={18} weight="600">
+    <View style={{ gap: 12 }}>
+      <Copy size={17} weight="600" style={{ letterSpacing: -0.2 }}>
         {title}
       </Copy>
       {children}
     </View>
   );
 }
+
 export function Surface({
   children,
   style,
@@ -164,14 +183,40 @@ export function Surface({
   return (
     <View
       style={[
-        { backgroundColor: c.surface, borderRadius: 22, padding: 18, gap: 16 },
+        {
+          backgroundColor: c.glass,
+          borderRadius: 22,
+          padding: 18,
+          gap: 14,
+          borderWidth: 1,
+          borderColor: c.glassBorder,
+          shadowColor: "rgba(0, 0, 0, 0.25)",
+          shadowOpacity: 0.18,
+          shadowRadius: 10,
+          elevation: 2,
+        },
         style,
       ]}
     >
+      {/* Top subtle highlight rim */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 1,
+          borderTopWidth: 1,
+          borderColor: c.glassBorderHighlight,
+          opacity: 0.8,
+        }}
+      />
       {children}
     </View>
   );
 }
+
 export function Tap({
   children,
   onPress,
@@ -199,7 +244,7 @@ export function Tap({
         useNativeDriver: true,
         stiffness: 420,
         damping: 32,
-        mass: 0.6,
+        mass: 0.5,
       }).start();
   };
   return (
@@ -218,9 +263,9 @@ export function Tap({
         onPressIn={() => animate(0.975)}
         onPressOut={() => animate(1)}
         style={({ pressed }) => ({
-          minHeight: 48,
+          minHeight: 44,
           justifyContent: "center",
-          opacity: pressed ? 0.8 : 1,
+          opacity: pressed ? 0.85 : 1,
         })}
       >
         {children}
@@ -228,41 +273,61 @@ export function Tap({
     </Animated.View>
   );
 }
+
 export function Button({
   title,
   onPress,
   disabled = false,
+  variant = "primary",
 }: {
   title: string;
   onPress: () => void;
   disabled?: boolean;
+  variant?: "primary" | "secondary" | "accent";
 }) {
   const c = useTheme();
+  const bg =
+    variant === "accent"
+      ? c.accent
+      : variant === "secondary"
+        ? c.glassElevated
+        : c.primary;
+
+  const textColor =
+    variant === "secondary" ? c.text : c.primaryContrast;
+
   return (
     <Tap
       label={title}
       onPress={onPress}
       disabled={disabled}
       style={{
-        backgroundColor: c.primary,
+        backgroundColor: bg,
         borderRadius: 16,
         paddingHorizontal: 20,
-        paddingVertical: 4,
+        paddingVertical: 12,
+        borderWidth: variant === "secondary" ? 1 : 0,
+        borderColor: c.glassBorder,
+        shadowColor: variant === "accent" ? c.accent : "transparent",
+        shadowOpacity: variant === "accent" ? 0.45 : 0,
+        shadowRadius: 10,
       }}
     >
       <Copy
         weight="600"
-        style={{ color: c.primaryContrast, textAlign: "center" }}
+        size={15}
+        style={{ color: textColor, textAlign: "center" }}
       >
         {title}
       </Copy>
     </Tap>
   );
 }
+
 export function Field({ label, ...props }: TextInputProps & { label: string }) {
   const c = useTheme();
   return (
-    <View style={{ gap: 7 }}>
+    <View style={{ gap: 6 }}>
       <Copy muted size={13}>
         {label}
       </Copy>
@@ -274,11 +339,14 @@ export function Field({ label, ...props }: TextInputProps & { label: string }) {
         style={[
           {
             color: c.text,
-            backgroundColor: c.surface,
-            borderRadius: 14,
-            padding: 16,
-            minHeight: 52,
-            fontSize: 17,
+            backgroundColor: "rgba(255, 255, 255, 0.06)",
+            borderRadius: 16,
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            minHeight: 50,
+            fontSize: 16,
+            borderWidth: 1,
+            borderColor: c.glassBorder,
           },
           props.style,
         ]}
@@ -286,6 +354,7 @@ export function Field({ label, ...props }: TextInputProps & { label: string }) {
     </View>
   );
 }
+
 export function Avatar({
   name,
   uri,
@@ -297,28 +366,42 @@ export function Avatar({
 }) {
   const c = useTheme();
   return uri ? (
-    <Image
-      accessibilityLabel={`${name}'s photo`}
-      source={{ uri }}
-      style={{ width: size, height: size, borderRadius: size / 2 }}
-    />
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderWidth: 1.5,
+        borderColor: c.glassBorderHighlight,
+        overflow: "hidden",
+      }}
+    >
+      <Image
+        accessibilityLabel={`${name}'s photo`}
+        source={{ uri }}
+        style={{ width: "100%", height: "100%" }}
+      />
+    </View>
   ) : (
     <View
       style={{
         width: size,
         height: size,
         borderRadius: size / 2,
-        backgroundColor: c.backgroundSecondary,
+        backgroundColor: "rgba(56, 139, 255, 0.22)",
+        borderWidth: 1.5,
+        borderColor: c.glassBorder,
         alignItems: "center",
         justifyContent: "center",
       }}
     >
-      <Copy size={size * 0.32} weight="600">
+      <Copy size={size * 0.34} weight="700" style={{ color: "#FFFFFF" }}>
         {name.trim().slice(0, 2).toUpperCase()}
       </Copy>
     </View>
   );
 }
+
 export const layout = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 12 },
   between: {

@@ -4,12 +4,10 @@ import {
   View,
   ScrollView,
   Pressable,
-  useWindowDimensions,
   StyleSheet,
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAppStore } from "../../store/AppContext";
-import { useTheme } from "../../constants/theme";
 import { useFeedback } from "../../services/feedback/FeedbackProvider";
 import { CloudPreview } from "./CloudPreview";
 import {
@@ -18,6 +16,8 @@ import {
   CloudSliderDef,
 } from "../../domain/character/cloudSliders";
 import { Copy, layout, Tap } from "../ui/Kit";
+import { AtmosphericBackground } from "../ui/AtmosphericBackground";
+import { GlassOrbFrame, GlassCard } from "../ui/Glass";
 
 interface CharacterStudioModalProps {
   visible: boolean;
@@ -28,9 +28,7 @@ export function CharacterStudioModal({
   visible,
   onClose,
 }: CharacterStudioModalProps) {
-  const c = useTheme();
   const feedback = useFeedback();
-  const { width } = useWindowDimensions();
   const {
     profile,
     cloudSettings,
@@ -46,7 +44,7 @@ export function CharacterStudioModal({
   >("params");
 
   const slidersForGroup = CLOUD_SLIDERS.filter(
-    (s) => s.group === activeGroup
+    (s) => s.group === activeGroup,
   );
 
   const getSliderValue = (slider: CloudSliderDef): number => {
@@ -63,7 +61,7 @@ export function CharacterStudioModal({
     const current = getSliderValue(slider);
     const updated = Math.min(
       slider.max,
-      Math.max(slider.min, Number((current + delta).toFixed(3)))
+      Math.max(slider.min, Number((current + delta).toFixed(3))),
     );
     if (slider.group === "face") {
       updateCloudSettings({
@@ -89,238 +87,239 @@ export function CharacterStudioModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={{ flex: 1, backgroundColor: c.background }}>
-        {/* Header Bar */}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingHorizontal: 20,
-            paddingTop: 16,
-            paddingBottom: 12,
-            borderBottomWidth: 1,
-            borderBottomColor: c.border,
-          }}
-        >
-          <View>
-            <Copy size={18} weight="700" style={{ letterSpacing: 0.5 }}>
-              Character Studio & Lab
-            </Copy>
-            <Copy size={12} muted>
-              Live volumetric character & physics controls
-            </Copy>
-          </View>
-          <Tap label="Close Studio" onPress={onClose}>
-            <View
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: c.surface,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons name="close" size={20} color={c.text} />
+      <AtmosphericBackground variant="calm">
+        <View style={{ flex: 1, backgroundColor: "transparent" }}>
+          {/* Header Bar */}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 20,
+              paddingTop: 16,
+              paddingBottom: 12,
+              borderBottomWidth: 1,
+              borderBottomColor: "rgba(255, 255, 255, 0.12)",
+            }}
+          >
+            <View>
+              <Copy size={18} weight="700" style={{ letterSpacing: 0.5, color: "#FFFFFF" }}>
+                Character Studio & Lab
+              </Copy>
+              <Copy size={12} muted>
+                Live volumetric character & physics controls
+              </Copy>
             </View>
-          </Tap>
-        </View>
-
-        {/* Live Top Preview (Sticky) */}
-        <View
-          style={{
-            alignItems: "center",
-            paddingVertical: 14,
-            backgroundColor: c.background,
-            borderBottomWidth: 1,
-            borderBottomColor: c.border,
-          }}
-        >
-          <CloudPreview
-            size={Math.min(width - 64, 230)}
-            colourId={profile.characterColour}
-            environment={profile.environment}
-            emotion={cloudEmotion}
-            behaviourId={activeBehaviourId ?? undefined}
-            cloudSettings={cloudSettings}
-            proximityState={proximity.state}
-          />
-          <View style={{ flexDirection: "row", gap: 12, marginTop: 10 }}>
-            <Tap
-              label="Reset Defaults"
-              onPress={() => {
-                feedback("click");
-                resetCloudSettings();
-              }}
-            >
+            <Tap label="Close Studio" onPress={onClose}>
               <View
                 style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  borderRadius: 14,
-                  backgroundColor: c.surface,
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: "rgba(255, 255, 255, 0.10)",
                   borderWidth: 1,
-                  borderColor: c.border,
+                  borderColor: "rgba(255, 255, 255, 0.16)",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                <Copy size={11} weight="600" muted>
-                  Reset Defaults
-                </Copy>
+                <Ionicons name="close" size={20} color="#FFFFFF" />
               </View>
             </Tap>
           </View>
-        </View>
 
-        {/* Group Filter Tabs */}
-        <View style={{ paddingVertical: 10, paddingHorizontal: 14 }}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8 }}
+          {/* Live Top Preview (Sticky) */}
+          <View
+            style={{
+              alignItems: "center",
+              paddingVertical: 14,
+              borderBottomWidth: 1,
+              borderBottomColor: "rgba(255, 255, 255, 0.10)",
+            }}
           >
-            {CLOUD_SLIDER_GROUPS.map((g) => {
-              const active = activeGroup === g.id;
-              return (
-                <Pressable
-                  key={g.id}
-                  onPress={() => {
-                    feedback("tick");
-                    setActiveGroup(g.id);
-                  }}
+            <GlassOrbFrame size={210}>
+              <CloudPreview
+                size={200}
+                colourId={profile.characterColour}
+                environment={profile.environment}
+                emotion={cloudEmotion}
+                behaviourId={activeBehaviourId ?? undefined}
+                cloudSettings={cloudSettings}
+                proximityState={proximity.state}
+              />
+            </GlassOrbFrame>
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 10 }}>
+              <Tap
+                label="Reset Defaults"
+                onPress={() => {
+                  feedback("click");
+                  resetCloudSettings();
+                }}
+              >
+                <View
                   style={{
                     paddingHorizontal: 14,
-                    paddingVertical: 8,
-                    borderRadius: 20,
-                    backgroundColor: active ? c.accent : c.surface,
+                    paddingVertical: 6,
+                    borderRadius: 14,
+                    backgroundColor: "rgba(255, 255, 255, 0.08)",
                     borderWidth: 1,
-                    borderColor: active ? c.accent : c.border,
+                    borderColor: "rgba(255, 255, 255, 0.16)",
                   }}
                 >
-                  <Copy
-                    size={12}
-                    weight={active ? "700" : "500"}
-                    style={{ color: active ? "#ffffff" : c.text }}
-                  >
-                    {g.label}
+                  <Copy size={11} weight="600" muted>
+                    Reset Defaults
                   </Copy>
-                </Pressable>
+                </View>
+              </Tap>
+            </View>
+          </View>
+
+          {/* Group Filter Tabs */}
+          <View style={{ paddingVertical: 10, paddingHorizontal: 14 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8 }}
+            >
+              {CLOUD_SLIDER_GROUPS.map((g) => {
+                const active = activeGroup === g.id;
+                return (
+                  <Pressable
+                    key={g.id}
+                    onPress={() => {
+                      feedback("tick");
+                      setActiveGroup(g.id);
+                    }}
+                    style={{
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderRadius: 20,
+                      backgroundColor: active ? "#388BFF" : "rgba(255, 255, 255, 0.08)",
+                      borderWidth: 1,
+                      borderColor: active ? "#388BFF" : "rgba(255, 255, 255, 0.14)",
+                    }}
+                  >
+                    <Copy
+                      size={12}
+                      weight={active ? "700" : "500"}
+                      style={{ color: active ? "#ffffff" : "rgba(240, 244, 252, 0.75)" }}
+                    >
+                      {g.label}
+                    </Copy>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {/* Sliders List */}
+          <ScrollView
+            contentContainerStyle={{
+              paddingHorizontal: 20,
+              paddingBottom: 40,
+              gap: 14,
+            }}
+            showsVerticalScrollIndicator={false}
+          >
+            {slidersForGroup.map((slider) => {
+              const val = getSliderValue(slider);
+              const range = slider.max - slider.min;
+              const pct = Math.max(
+                0,
+                Math.min(100, ((val - slider.min) / range) * 100),
+              );
+              const step = slider.step || (range > 10 ? 1 : 0.05);
+
+              return (
+                <GlassCard
+                  key={slider.key}
+                  style={{
+                    padding: 14,
+                    gap: 10,
+                  }}
+                >
+                  <View style={layout.between}>
+                    <Copy size={13} weight="600">
+                      {slider.label}
+                    </Copy>
+                    <Copy size={12} weight="700" style={{ color: "#388BFF" }}>
+                      {val.toFixed(slider.step >= 1 ? 0 : 2)}
+                    </Copy>
+                  </View>
+
+                  {/* Visual Progress Bar */}
+                  <View
+                    style={{
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: "rgba(255, 255, 255, 0.12)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: `${pct}%`,
+                        height: "100%",
+                        backgroundColor: "#388BFF",
+                      }}
+                    />
+                  </View>
+
+                  {/* Step Controls */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <Copy size={10} muted>
+                      min: {slider.min}
+                    </Copy>
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <Pressable
+                        onPress={() => adjustValue(slider, -step * 5)}
+                        style={styles.stepBtn}
+                      >
+                        <Copy size={10} weight="600">
+                          --
+                        </Copy>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => adjustValue(slider, -step)}
+                        style={styles.stepBtn}
+                      >
+                        <Copy size={14} weight="600">
+                          -
+                        </Copy>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => adjustValue(slider, step)}
+                        style={styles.stepBtn}
+                      >
+                        <Copy size={14} weight="600">
+                          +
+                        </Copy>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => adjustValue(slider, step * 5)}
+                        style={styles.stepBtn}
+                      >
+                        <Copy size={10} weight="600">
+                          ++
+                        </Copy>
+                      </Pressable>
+                    </View>
+                    <Copy size={10} muted>
+                      max: {slider.max}
+                    </Copy>
+                  </View>
+                </GlassCard>
               );
             })}
           </ScrollView>
         </View>
-
-        {/* Sliders List */}
-        <ScrollView
-          contentContainerStyle={{
-            paddingHorizontal: 20,
-            paddingBottom: 40,
-            gap: 14,
-          }}
-          showsVerticalScrollIndicator={false}
-        >
-          {slidersForGroup.map((slider) => {
-            const val = getSliderValue(slider);
-            const range = slider.max - slider.min;
-            const pct = Math.max(
-              0,
-              Math.min(100, ((val - slider.min) / range) * 100)
-            );
-            const step = slider.step || (range > 10 ? 1 : 0.05);
-
-            return (
-              <View
-                key={slider.key}
-                style={{
-                  padding: 14,
-                  borderRadius: 16,
-                  backgroundColor: c.surface,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  gap: 10,
-                }}
-              >
-                <View style={layout.between}>
-                  <Copy size={13} weight="600">
-                    {slider.label}
-                  </Copy>
-                  <Copy size={12} weight="700" style={{ color: c.accent }}>
-                    {val.toFixed(slider.step >= 1 ? 0 : 2)}
-                  </Copy>
-                </View>
-
-                {/* Visual Progress Bar */}
-                <View
-                  style={{
-                    height: 6,
-                    borderRadius: 3,
-                    backgroundColor: c.border,
-                    overflow: "hidden",
-                  }}
-                >
-                  <View
-                    style={{
-                      width: `${pct}%`,
-                      height: "100%",
-                      backgroundColor: c.accent,
-                    }}
-                  />
-                </View>
-
-                {/* Step Controls */}
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <Copy size={10} muted>
-                    min: {slider.min}
-                  </Copy>
-                  <View style={{ flexDirection: "row", gap: 8 }}>
-                    <Pressable
-                      onPress={() => adjustValue(slider, -step * 5)}
-                      style={styles.stepBtn}
-                    >
-                      <Copy size={10} weight="600">
-                        --
-                      </Copy>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => adjustValue(slider, -step)}
-                      style={styles.stepBtn}
-                    >
-                      <Copy size={14} weight="600">
-                        -
-                      </Copy>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => adjustValue(slider, step)}
-                      style={styles.stepBtn}
-                    >
-                      <Copy size={14} weight="600">
-                        +
-                      </Copy>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => adjustValue(slider, step * 5)}
-                      style={styles.stepBtn}
-                    >
-                      <Copy size={10} weight="600">
-                        ++
-                      </Copy>
-                    </Pressable>
-                  </View>
-                  <Copy size={10} muted>
-                    max: {slider.max}
-                  </Copy>
-                </View>
-              </View>
-            );
-          })}
-        </ScrollView>
-      </View>
+      </AtmosphericBackground>
     </Modal>
   );
 }
@@ -330,7 +329,9 @@ const styles = StyleSheet.create({
     width: 34,
     height: 30,
     borderRadius: 8,
-    backgroundColor: "rgba(128,128,128,0.12)",
+    backgroundColor: "rgba(255, 255, 255, 0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.16)",
     alignItems: "center",
     justifyContent: "center",
   },

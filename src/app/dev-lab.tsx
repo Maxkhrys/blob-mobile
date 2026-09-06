@@ -12,6 +12,8 @@ import { useRouter } from "expo-router";
 import { CloudPreview } from "../components/character/CloudPreview";
 import { DevSlider } from "../components/devlab/DevSlider";
 import { Copy } from "../components/ui/Kit";
+import { AtmosphericBackground } from "../components/ui/AtmosphericBackground";
+import { GlassOrbFrame } from "../components/ui/Glass";
 import { useTheme } from "../constants/theme";
 import { useAppStore } from "../store/AppContext";
 import {
@@ -96,7 +98,6 @@ function ToolbarButton({
   active?: boolean;
   onPress: () => void;
 }) {
-  const c = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -105,16 +106,19 @@ function ToolbarButton({
       style={({ pressed }) => ({
         width: 48,
         height: 42,
-        borderRadius: 13,
+        borderRadius: 14,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: active ? c.accent : c.surface,
-        borderWidth: active ? 0 : 1,
-        borderColor: c.border,
+        backgroundColor: active ? "#388BFF" : "rgba(255, 255, 255, 0.08)",
+        borderWidth: 1,
+        borderColor: active ? "#388BFF" : "rgba(255, 255, 255, 0.14)",
+        shadowColor: active ? "#388BFF" : "transparent",
+        shadowOpacity: active ? 0.45 : 0,
+        shadowRadius: 8,
         opacity: pressed ? 0.68 : 1,
       })}
     >
-      <Ionicons name={icon} size={19} color={active ? "#fff" : c.text} />
+      <Ionicons name={icon} size={19} color={active ? "#fff" : "rgba(240, 244, 252, 0.85)"} />
     </Pressable>
   );
 }
@@ -128,22 +132,24 @@ function Choice({
   selected?: boolean;
   onPress: () => void;
 }) {
-  const c = useTheme();
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => ({
-        paddingHorizontal: 13,
+        paddingHorizontal: 14,
         minHeight: 38,
         justifyContent: "center",
-        borderRadius: 12,
-        backgroundColor: selected ? c.accent : "transparent",
-        borderWidth: selected ? 0 : 1,
-        borderColor: c.border,
+        borderRadius: 9999,
+        backgroundColor: selected ? "#388BFF" : "rgba(255, 255, 255, 0.08)",
+        borderWidth: 1,
+        borderColor: selected ? "#388BFF" : "rgba(255, 255, 255, 0.14)",
+        shadowColor: selected ? "#388BFF" : "transparent",
+        shadowOpacity: selected ? 0.4 : 0,
+        shadowRadius: 6,
         opacity: pressed ? 0.7 : 1,
       })}
     >
-      <Copy size={13} weight="600" style={{ color: selected ? "#fff" : c.text }}>
+      <Copy size={13} weight={selected ? "700" : "500"} style={{ color: selected ? "#fff" : "rgba(240, 244, 252, 0.80)" }}>
         {label}
       </Copy>
     </Pressable>
@@ -152,7 +158,7 @@ function Choice({
 
 function GroupTitle({ children }: { children: React.ReactNode }) {
   return (
-    <Copy size={12} muted weight="700" style={{ textTransform: "uppercase", letterSpacing: 0.9, marginTop: 4 }}>
+    <Copy size={12} muted weight="700" style={{ textTransform: "uppercase", letterSpacing: 1.1, marginTop: 6, color: "rgba(240, 244, 252, 0.50)" }}>
       {children}
     </Copy>
   );
@@ -481,49 +487,53 @@ export default function DevLabScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: c.background }} edges={["top", "left", "right", "bottom"]}>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 10 }}>
-        <Pressable onPress={() => router.back()} style={{ width: 42, height: 42, justifyContent: "center" }}><Ionicons name="chevron-back" size={24} color={c.text} /></Pressable>
-        <View style={{ alignItems: "center" }}><Copy weight="700">Dev Lab</Copy><Copy muted size={10}>LCDPROTO · {LCDPROTO_SOURCE_SHA.slice(0, 7)}</Copy></View>
-        <View style={{ width: 42 }} />
-      </View>
-
-      <View style={{ alignItems: "center", paddingTop: 2, paddingBottom: 8 }}>
-        <CloudPreview
-          palette={palette}
-          proximityState={devState}
-          cloudSettings={cloudSettings}
-          driverYaw={driverYaw}
-          driverPitch={driverPitch}
-          showPupils={showPupils}
-          interactive
-          environment={environment}
-          size={236}
-          runtimeActive={!paused}
-          runtimeCommand={command}
-          commandToken={commandToken}
-          expressionRecipe={recipeEnabled ? recipe : null}
-          debugTelemetry
-          onTelemetry={setTelemetry}
-        />
-      </View>
-
-      <View style={{ flexDirection: "row", justifyContent: "center", gap: 8, paddingVertical: 6 }}>
-        <ToolbarButton icon={paused ? "play" : "pause"} label={paused ? "Play" : "Pause"} active={paused} onPress={() => { const next = !paused; setPaused(next); issue({ type: next ? "pause" : "play" }); }} />
-        <ToolbarButton icon="locate-outline" label="Center" onPress={() => issue({ type: "center" })} />
-        <ToolbarButton icon="refresh" label="Reset" onPress={() => { setPaused(false); setRecipeEnabled(false); issue({ type: "reset" }); }} />
-        <ToolbarButton icon="cloud-outline" label="Clear trails" onPress={() => issue({ type: "clearTrails" })} />
-      </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingHorizontal: 16, paddingVertical: 8 }}>
-        {SECTIONS.map((item) => <Choice key={item.id} label={item.label} selected={section === item.id} onPress={() => setSection(item.id)} />)}
-      </ScrollView>
-
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 56, gap: 12 }}>
-        <View style={{ width: "100%", maxWidth: 560, alignSelf: "center" }}>
-          {renderSection()}
+    <AtmosphericBackground variant="calm">
+      <SafeAreaView style={{ flex: 1, backgroundColor: "transparent" }} edges={["top", "left", "right", "bottom"]}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 10 }}>
+          <Pressable onPress={() => router.back()} style={{ width: 42, height: 42, justifyContent: "center" }}><Ionicons name="chevron-back" size={24} color={c.text} /></Pressable>
+          <View style={{ alignItems: "center" }}><Copy weight="700">Dev Lab</Copy><Copy muted size={10}>LCDPROTO · {LCDPROTO_SOURCE_SHA.slice(0, 7)}</Copy></View>
+          <View style={{ width: 42 }} />
         </View>
-      </ScrollView>
-    </SafeAreaView>
+
+        <View style={{ alignItems: "center", paddingTop: 2, paddingBottom: 8 }}>
+          <GlassOrbFrame size={238}>
+            <CloudPreview
+              palette={palette}
+              proximityState={devState}
+              cloudSettings={cloudSettings}
+              driverYaw={driverYaw}
+              driverPitch={driverPitch}
+              showPupils={showPupils}
+              interactive
+              environment={environment}
+              size={230}
+              runtimeActive={!paused}
+              runtimeCommand={command}
+              commandToken={commandToken}
+              expressionRecipe={recipeEnabled ? recipe : null}
+              debugTelemetry
+              onTelemetry={setTelemetry}
+            />
+          </GlassOrbFrame>
+        </View>
+
+        <View style={{ flexDirection: "row", justifyContent: "center", gap: 8, paddingVertical: 6 }}>
+          <ToolbarButton icon={paused ? "play" : "pause"} label={paused ? "Play" : "Pause"} active={paused} onPress={() => { const next = !paused; setPaused(next); issue({ type: next ? "pause" : "play" }); }} />
+          <ToolbarButton icon="locate-outline" label="Center" onPress={() => issue({ type: "center" })} />
+          <ToolbarButton icon="refresh" label="Reset" onPress={() => { setPaused(false); setRecipeEnabled(false); issue({ type: "reset" }); }} />
+          <ToolbarButton icon="cloud-outline" label="Clear trails" onPress={() => issue({ type: "clearTrails" })} />
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingHorizontal: 16, paddingVertical: 8 }}>
+          {SECTIONS.map((item) => <Choice key={item.id} label={item.label} selected={section === item.id} onPress={() => setSection(item.id)} />)}
+        </ScrollView>
+
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 56, gap: 12 }}>
+          <View style={{ width: "100%", maxWidth: 560, alignSelf: "center" }}>
+            {renderSection()}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </AtmosphericBackground>
   );
 }
