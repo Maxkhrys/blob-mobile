@@ -5,6 +5,7 @@ import type { HomeMood } from "./blobBehaviour";
 import type { BlobColour } from "./blobRig";
 import type { CharacterId, CloudSettings } from "./characters";
 import type { BlobDestination, BlobIntention } from "./blobMind";
+import type { MindCommand } from "./mind/commands";
 import type { EnvironmentConfig, EnvironmentStatus } from "./environmentConfig";
 
 export type DisplayMode = "dark" | "warm" | "brown";
@@ -116,4 +117,6 @@ export interface StateViewProps {
   environment: EnvironmentConfig;
   /** Live environment values for the developer readout. */
   onEnvironmentStatus?: (status: EnvironmentStatus) => void;
+  /** Mind Lab commands; a new nonce runs the command once. */
+  mindCommand?: MindCommand | null;
 }

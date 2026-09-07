@@ -135,17 +135,17 @@ export const DESTINATIONS: readonly BlobDestination[] = [
   "DOWN_RIGHT",
 ] as const;
 
-const DESTINATION_POSES: Record<
+export const DESTINATION_POSES: Record<
   BlobDestination,
   { x: number; y: number; depth: number; yaw: number; pitch: number }
 > = {
   CENTER: { x: 0, y: 0, depth: 0, yaw: 0, pitch: 0 },
-  UP_LEFT: { x: -50, y: -37, depth: 0.08, yaw: -16, pitch: -4 },
-  UP_RIGHT: { x: 50, y: -37, depth: 0.08, yaw: 16, pitch: -4 },
-  LEFT: { x: -60, y: 0, depth: 0.14, yaw: -18, pitch: 0 },
-  RIGHT: { x: 60, y: 0, depth: 0.14, yaw: 18, pitch: 0 },
-  DOWN_LEFT: { x: -45, y: 39, depth: -0.14, yaw: -13, pitch: 4 },
-  DOWN_RIGHT: { x: 45, y: 39, depth: -0.14, yaw: 13, pitch: 4 },
+  UP_LEFT: { x: -85, y: -72, depth: 0.08, yaw: 0, pitch: 0 },
+  UP_RIGHT: { x: 85, y: -72, depth: 0.08, yaw: 0, pitch: 0 },
+  LEFT: { x: -105, y: -6, depth: 0.12, yaw: 0, pitch: 0 },
+  RIGHT: { x: 105, y: -6, depth: 0.12, yaw: 0, pitch: 0 },
+  DOWN_LEFT: { x: -82, y: 68, depth: -0.12, yaw: 0, pitch: 0 },
+  DOWN_RIGHT: { x: 82, y: 68, depth: -0.12, yaw: 0, pitch: 0 },
 };
 
 const story = (

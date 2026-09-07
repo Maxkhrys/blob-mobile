@@ -1,10 +1,33 @@
 import {
   BlobMind,
+  DESTINATION_POSES,
   type BlobDestination,
   type BlobIntention,
   type MindStory,
 } from "../blobMind";
 import { FACE_STYLE } from "../blobRig";
+import { CherriMind } from "../mind/director";
+import type {
+  FacingIntent,
+  MindCue,
+  MindEvent,
+  MindIntent,
+  MindPlan,
+  MindTelemetry,
+  MovementEnergy,
+  MovementMode,
+  MovementProfile,
+  PrimitiveId,
+  ReturnPolicy,
+  YawSource,
+} from "../mind/types";
+import {
+  PRIMITIVES,
+  samplePrimitive,
+  ZERO_FRAME,
+  type BodyFrame,
+} from "./primitives";
+import { STORY_BY_ID } from "../mind/catalogue";
 import {
   type BehaviourConfig,
   type BehaviourId,
@@ -302,6 +325,18 @@ export class BehaviourController {
   private leftEyeStyle: number = -1;
   private rightEyeStyle: number = -1;
 
+  /**
+   * Emotional body posture (Cherri Mind V4).
+   *
+   * Expressions carry a small sustained posture on existing springs:
+   * happy lifts and puffs, sad and sleepy sag, angry compresses, curious leans in, shy withdraws.
+   */
+  private readonly posture = { lift: 0, puff: 0, depth: 0, lean: 0 };
+  private postureLift = new SpringAxis();
+  private posturePuff = new SpringAxis();
+  private postureDepth = new SpringAxis();
+  private postureLean = new SpringAxis();
+
   private massXTarget = 0;
   private massYTarget = 0;
   private massRotationTarget = 0;
@@ -318,6 +353,22 @@ export class BehaviourController {
 
   private readonly delta: PoseDelta = { ...NEUTRAL_DELTA };
   private readonly mind = new BlobMind();
+
+  /**
+   * Mind V3 decides WHAT Cherri does; everything below this line still decides
+   * HOW. The legacy BlobMind above is kept only for the Motion panel's manual
+   * intention/destination overrides, which predate the director.
+   */
+  private readonly mindV3 = new CherriMind();
+  private plan: MindPlan | null = null;
+  private planStartedAt = 0;
+  private planCursor = 0;
+  private primitiveId: PrimitiveId | null = null;
+  private primitiveStartedAt = -1;
+  private primitiveAmount = 1;
+  private primitiveDir = 0;
+  private readonly primitiveFrame: BodyFrame = { ...ZERO_FRAME };
+  private readonly primitiveScratch: BodyFrame = { ...ZERO_FRAME };
   private mindIntentionOverride: BlobIntention | null = null;
   private mindDestinationOverride: BlobDestination | null = null;
   private mindDepthOverride: number | null = null;
@@ -328,20 +379,100 @@ export class BehaviourController {
   private lastDestination: BlobDestination = "CENTER";
   private storyMoveAt = 0;
   private storyMoveApplied = false;
-  private travelXTarget = 0;
-  private travelYTarget = 0;
-  private travelRotationTarget = 0;
-  private travelScaleYTarget = 0;
-  private travelDepthTarget = 0;
+  // Layered spatial coordinates:
+  // 1. World navigation (owned strictly by spatial destination travel)
+  private worldXTarget = 0;
+  private worldYTarget = 0;
+  private worldDepthTarget = 0;
+  private worldRotationTarget = 0;
+
+  // 2. Local body deformation & hop/squish offsets (owned by body beats/phrases)
+  private localBodyX = 0;
+  private localBodyY = 0;
+  private localBodyRotation = 0;
+  private localBodyScaleY = 0;
+
+  // 3. Special entrance/exit offsets
+  private specialX = 0;
+  private specialY = 0;
+
+  // 4. Decoupled 3D orientation & transit dynamics
   private travelYawTarget = 0;
   private travelPitchTarget = 0;
+  private targetBaseYaw = 0;
+  private targetBasePitch = 0;
+  private travelPeakYaw = 0;
+  private travelPeakPitch = 0;
+  private transitYaw = 0;
+  private transitPitch = 0;
+  private activeFacingIntent: FacingIntent = "FORWARD";
+  private currentYawSource: YawSource = "NEUTRAL";
+  private storyHoldsFacing = false;
+
+  get travelXTarget(): number {
+    return this.worldXTarget + this.localBodyX;
+  }
+  set travelXTarget(val: number) {
+    this.worldXTarget = val;
+  }
+  get travelYTarget(): number {
+    return this.worldYTarget + this.localBodyY;
+  }
+  set travelYTarget(val: number) {
+    this.worldYTarget = val;
+  }
+  get travelDepthTarget(): number {
+    return this.worldDepthTarget;
+  }
+  set travelDepthTarget(val: number) {
+    this.worldDepthTarget = val;
+  }
+  get travelRotationTarget(): number {
+    return this.worldRotationTarget + this.localBodyRotation;
+  }
+  set travelRotationTarget(val: number) {
+    this.worldRotationTarget = val;
+  }
+  get travelScaleYTarget(): number {
+    return this.localBodyScaleY;
+  }
+  set travelScaleYTarget(val: number) {
+    this.localBodyScaleY = val;
+  }
+
+  // Spatial travel interpolation & 3D buoyant arc
+  private travelProgress = 1;
+  private travelDuration = 800;
+  private travelStartX = 0;
+  private travelStartY = 0;
+  private travelStartYaw = 0;
+  private travelStartPitch = 0;
+  private travelStartDepth = 0;
+  private travelTargetX = 0;
+  private travelTargetY = 0;
+  private travelTargetYaw = 0;
+  private travelTargetPitch = 0;
+  private travelTargetDepth = 0;
+  private travelProfile: MovementProfile = "REST";
+  private travelMode: MovementMode = "STAY";
+  private travelReturnPolicy: ReturnPolicy = "HOLD";
+  private currentSpatialZone: BlobDestination = "CENTER";
+  private targetSpatialZone: BlobDestination = "CENTER";
+  private forcedPlanRequested = false;
+  private manualPlanActive = false;
+  private manualPlanUntil = 0;
 
   reset() {
     this.clock = 0;
     this.initialized = false;
     this.autoWasEnabled = true;
+    this.forcedPlanRequested = false;
+    this.manualPlanActive = false;
+    this.manualPlanUntil = 0;
     this.rand = mulberry32(0x1a11ee);
     this.mind.reset();
+    this.mindV3.reset();
+    this.clearPlan();
     this.mindIntentionOverride = null;
     this.mindDestinationOverride = null;
     this.mindDepthOverride = null;
@@ -376,13 +507,44 @@ export class BehaviourController {
     this.followXTarget = 0;
     this.followRotationTarget = 0;
     this.followScaleYTarget = 0;
-    this.travelXTarget = 0;
-    this.travelYTarget = 0;
-    this.travelRotationTarget = 0;
-    this.travelScaleYTarget = 0;
-    this.travelDepthTarget = 0;
+    this.worldXTarget = 0;
+    this.worldYTarget = 0;
+    this.worldRotationTarget = 0;
+    this.worldDepthTarget = 0;
+    this.localBodyX = 0;
+    this.localBodyY = 0;
+    this.localBodyRotation = 0;
+    this.localBodyScaleY = 0;
+    this.specialX = 0;
+    this.specialY = 0;
     this.travelYawTarget = 0;
     this.travelPitchTarget = 0;
+    this.targetBaseYaw = 0;
+    this.targetBasePitch = 0;
+    this.travelPeakYaw = 0;
+    this.travelPeakPitch = 0;
+    this.transitYaw = 0;
+    this.transitPitch = 0;
+    this.activeFacingIntent = "FORWARD";
+    this.currentYawSource = "NEUTRAL";
+    this.storyHoldsFacing = false;
+    this.travelProgress = 1;
+    this.travelDuration = 800;
+    this.travelStartX = 0;
+    this.travelStartY = 0;
+    this.travelStartYaw = 0;
+    this.travelStartPitch = 0;
+    this.travelStartDepth = 0;
+    this.travelTargetX = 0;
+    this.travelTargetY = 0;
+    this.travelTargetYaw = 0;
+    this.travelTargetPitch = 0;
+    this.travelTargetDepth = 0;
+    this.travelProfile = "REST";
+    this.travelMode = "STAY";
+    this.travelReturnPolicy = "HOLD";
+    this.currentSpatialZone = "CENTER";
+    this.targetSpatialZone = "CENTER";
     this.spinStartedAt = -1;
     this.spinRotation = 0;
     this.impactAt = 0;
@@ -442,6 +604,11 @@ export class BehaviourController {
     this.faceStyle = FACE_STYLE.CONTENT;
     this.leftEyeStyle = -1;
     this.rightEyeStyle = -1;
+    this.postureLift.reset();
+    this.posturePuff.reset();
+    this.postureDepth.reset();
+    this.postureLean.reset();
+    this.posture.lift = this.posture.puff = this.posture.depth = this.posture.lean = 0;
     this.bodyStartedAt = 0;
     this.bodyBaseTravelX = 0;
     this.bodyBaseTravelY = 0;
@@ -450,6 +617,180 @@ export class BehaviourController {
     this.clearBodyTargets();
     this.applyMoodTargets();
     Object.assign(this.delta, NEUTRAL_DELTA);
+  }
+
+  /* ------------------------------------------------------------- mind V3 */
+
+  /** Feeds one context event to the director. Safe to call from any frame. */
+  notify(event: MindEvent) {
+    this.mindV3.push(event);
+  }
+
+  /** The high-level intent door for a future phone or cloud model. */
+  requestIntent(intent: MindIntent) {
+    this.mindV3.request(intent);
+  }
+
+  /** Mind Lab: push the drives to a named mood preset. */
+  forceMindMood(mood: string) {
+    this.mindV3.forceMood(mood);
+  }
+
+  /** Mind Lab / Playground: play one authored story by id, bypassing scoring. Returns false if not found. */
+  playStory(storyId: string): boolean {
+    if (storyId !== "DEMO_60S_ADORABILITY" && !STORY_BY_ID.has(storyId)) {
+      console.warn(`[BehaviourController.playStory] Story not found in catalogue: "${storyId}"`);
+      return false;
+    }
+    this.forcedPlanRequested = true;
+    this.manualBeat = false;
+    this.manualPlanActive = true;
+    const def = STORY_BY_ID.get(storyId);
+    this.manualPlanUntil = this.clock + (def ? def.durationMs : 3000);
+    this.mindV3.play(storyId);
+    return true;
+  }
+
+  /** Acting Playground: play an arbitrary compiled plan directly with priority over autonomous decisions. */
+  playPlan(
+    plan: MindPlan,
+    cfg: BehaviourConfig = { gazePx: 8, squash: 0.032, paceScale: 1, blinkIntervalMs: 3400 }
+  ) {
+    this.forcedPlanRequested = false;
+    this.manualBeat = false;
+    this.manualPlanActive = true;
+    this.manualPlanUntil = this.clock + plan.durationMs;
+    this.startPlan(plan, cfg);
+  }
+
+  /** Acting Playground: trigger a body primitive directly. Returns false if not found. */
+  triggerPrimitive(id: PrimitiveId, amount: number = 1.0, dir: number = 0): boolean {
+    if (!PRIMITIVES[id]) return false;
+    this.startPrimitive(id, amount, dir);
+    return true;
+  }
+
+  /** Checks if a forced manual performance or route is currently executing. */
+  get isManualPlanRunning(): boolean {
+    return this.manualPlanActive && this.clock < this.manualPlanUntil;
+  }
+
+  /** Acting Playground: step directly to the next phase timestamp in the active plan. */
+  stepNextPhase() {
+    if (!this.plan || this.planCursor >= this.plan.cues.length) return;
+    const nextCue = this.plan.cues[this.planCursor];
+    if (nextCue) {
+      this.clock = this.planStartedAt + nextCue.atMs;
+    }
+  }
+
+  /** Gets currently active MindPlan if any. */
+  get activePlan(): MindPlan | null {
+    return this.plan;
+  }
+
+  /** Mind Lab: skip the quiet gap and take the next autonomous decision. */
+  thinkNow() {
+    this.mindV3.thinkNow();
+  }
+
+  /** Mind Lab: simulate an absence so idle behaviour can be inspected. */
+  skipQuiet(ms: number) {
+    this.mindV3.fastForwardQuiet(ms);
+    this.clearPlan();
+  }
+
+  /** Determinism hook: the same seed reproduces the same choices. */
+  setMindSeed(seed: number) {
+    this.reset();
+    this.mindV3.setSeed(seed);
+  }
+
+  get mindSeed() {
+    return this.mindV3.seed;
+  }
+
+  forceZone(zone: BlobDestination) {
+    this.forcedPlanRequested = true;
+    this.manualBeat = false;
+    this.mindV3.forceZone(zone);
+  }
+
+  forceWander() {
+    this.forcedPlanRequested = true;
+    this.manualBeat = false;
+    this.mindV3.forceWander();
+  }
+
+  returnCenter() {
+    this.forceZone("CENTER");
+  }
+
+  resetSpatial() {
+    this.clearPlan();
+    this.mindV3.resetSpatial();
+    this.applyDestination("CENTER", undefined, "REST", "STAY", "HOLD");
+  }
+
+  /* ------------------------------------- Mind V4 movement (dev controls) */
+
+  /** Make the next autonomous decision a relocation, chosen by the mind. */
+  forceNextMove() {
+    this.forcedPlanRequested = true;
+    this.manualBeat = false;
+    this.mindV3.forceNextMove();
+  }
+
+  /** The same, with the spatial urge pushed to the top of its range. */
+  forceExplore() {
+    this.forcedPlanRequested = true;
+    this.manualBeat = false;
+    this.mindV3.forceExplore();
+  }
+
+  /** Drop the accumulated pressure to be somewhere else back to nothing. */
+  resetSpatialUrge() {
+    this.mindV3.resetSpatialUrge();
+  }
+
+  /** Dev-only global pacing scale for the movement system. */
+  setMovementEnergy(level: MovementEnergy) {
+    this.mindV3.setMovementEnergy(level);
+  }
+
+  get mindV4() {
+    return this.mindV3;
+  }
+
+  moveToZone(zone: BlobDestination, policy: ReturnPolicy = "HOLD") {
+    this.applyDestination(zone, undefined, "EXPLORE", "FLOAT", policy);
+  }
+
+  playAdorabilityDemo() {
+    this.forcedPlanRequested = true;
+    this.manualBeat = false;
+    this.mindV3.forceStory("DEMO_60S_ADORABILITY");
+  }
+
+  mindTelemetry(): MindTelemetry {
+    const base = this.mindV3.telemetry();
+    return {
+      ...base,
+      currentZone: this.currentSpatialZone,
+      targetZone: this.targetSpatialZone,
+      movementMode: this.travelMode,
+      movementProgress: this.travelProgress,
+      movementProfile: this.travelProfile,
+      returnPolicy: this.travelReturnPolicy,
+      travelYawTarget: this.travelYawTarget,
+      travelPitchTarget: this.travelPitchTarget,
+      worldX: this.worldXTarget,
+      worldY: this.worldYTarget,
+      yawSource: this.currentYawSource,
+      facingIntent: this.activeFacingIntent,
+      targetX: this.travelTargetX,
+      targetY: this.travelTargetY,
+    };
   }
 
   setMood(mood: HomeMood | null) {
@@ -499,7 +840,11 @@ export class BehaviourController {
   /** Future device states can take over every channel from the current pose. */
   cancel() {
     this.clearBeatCues();
+    this.forcedPlanRequested = false;
+    this.manualPlanActive = false;
+    this.manualPlanUntil = 0;
     this.gazeReleaseAt = this.expressionReleaseAt = this.mouthReleaseAt = 0;
+    this.applyPosture(null);
     this.bodyReleaseAt = this.followAt = this.followReleaseAt = 0;
     this.baseGazeX = this.baseGazeY = this.microX = this.microY = 0;
     this.mouthOpacityValue = 1;
@@ -515,13 +860,27 @@ export class BehaviourController {
     this.lastDestination = "CENTER";
     this.storyMoveAt = 0;
     this.storyMoveApplied = false;
-    this.travelXTarget = 0;
-    this.travelYTarget = 0;
-    this.travelRotationTarget = 0;
-    this.travelScaleYTarget = 0;
-    this.travelDepthTarget = 0;
+    this.worldXTarget = 0;
+    this.worldYTarget = 0;
+    this.worldRotationTarget = 0;
+    this.worldDepthTarget = 0;
+    this.localBodyX = 0;
+    this.localBodyY = 0;
+    this.localBodyRotation = 0;
+    this.localBodyScaleY = 0;
+    this.specialX = 0;
+    this.specialY = 0;
     this.travelYawTarget = 0;
     this.travelPitchTarget = 0;
+    this.targetBaseYaw = 0;
+    this.targetBasePitch = 0;
+    this.travelPeakYaw = 0;
+    this.travelPeakPitch = 0;
+    this.transitYaw = 0;
+    this.transitPitch = 0;
+    this.activeFacingIntent = "FORWARD";
+    this.currentYawSource = "NEUTRAL";
+    this.storyHoldsFacing = false;
     this.spinStartedAt = -1;
     this.spinRotation = 0;
     this.impactAt = 0;
@@ -668,14 +1027,12 @@ export class BehaviourController {
     this.updateBodyBeat();
     if (this.impactAt > 0 && this.clock >= this.impactAt) {
       this.impactAt = 0;
-      // Impact arrives after the travel. Compress hard, then let the body
-      // spring rebound from the wall instead of holding one static squish.
-      this.travelXTarget = this.impactDirection * -4.5;
-      this.travelRotationTarget = this.impactDirection * -5.2;
+      this.localBodyX = this.impactDirection * -4.5;
+      this.localBodyRotation = this.impactDirection * -5.2;
       this.massXTarget = this.impactDirection * -3.2;
       this.massRotationTarget = this.impactDirection * -5.4;
-      this.travelYTarget = 4.8;
-      this.travelScaleYTarget = -0.145;
+      this.localBodyY = 4.8;
+      this.localBodyScaleY = -0.145;
       this.massYTarget = 3.7;
       this.massScaleYTarget = -0.105;
       this.massSkewYTarget = this.impactDirection * 3.2;
@@ -696,6 +1053,7 @@ export class BehaviourController {
     if (this.expressionReleaseAt > 0 && this.clock >= this.expressionReleaseAt) {
       this.expressionReleaseAt = 0;
       this.lidAction = "MOOD";
+      this.applyPosture(null);
       this.applyMoodEyeTargets();
       this.applyMoodFace();
     }
@@ -736,25 +1094,33 @@ export class BehaviourController {
     // Manual preview cues must continue even when Auto is off. The old gate
     // here made staged expression beats silently freeze halfway through.
     this.runBeatCues(cfg);
+    this.runMind(dtMs, cfg, autoEnabled);
+    this.runPlanCues(cfg);
+    this.updateTravel(dtMs);
 
     if (autoEnabled) {
-
-      if (this.clock >= this.nextMoodAt) this.pickMood(cfg);
-      if (this.clock >= this.nextMicroAt) this.pickMicro(cfg);
+      // Legacy mood picking only runs when Motion tab overrides are active.
+      // In normal operation, Mind V3 owns character mood and intention.
+      if (this.overridesActive() && this.clock >= this.nextMoodAt) {
+        this.pickMood(cfg);
+      }
+      if (this.plan === null && this.clock >= this.nextMicroAt) this.pickMicro(cfg);
       if (
+        this.overridesActive() &&
         this.clock >= this.nextBeatAt &&
         this.beatUntil === 0 &&
         this.specialAction === null
       )
         this.pickMindStory(cfg);
-      // Between stories Blob still looks around on his own. Without this the
-      // eyes only ever moved when a whole thought was scheduled, which read as
-      // a stare.
+      // Between stories Blob looks around on his own.
+      // Stand down completely while Mind V3 is actively running a plan.
       if (
+        this.overridesActive() &&
         this.clock >= this.nextGazeAt &&
         this.gazeReleaseAt === 0 &&
         this.beatUntil === 0 &&
-        this.specialAction === null
+        this.specialAction === null &&
+        this.plan === null
       )
         this.pickIdleGaze(cfg);
       if (this.clock >= this.nextBlinkAt && this.blinkStartedAt < 0)
@@ -763,7 +1129,471 @@ export class BehaviourController {
 
     this.updateBlink();
     this.updateMouthTurn();
+    this.updatePrimitive();
     this.stepFaceSprings(dtMs);
+  }
+
+  /**
+   * The director runs every frame but only thinks at its own low rate. Its
+   * output is a plan; a plan is a list of cues this class already knows how to
+   * execute, so nothing about the animation layer had to change to gain a
+   * personality.
+   */
+  private runMind(dtMs: number, cfg: BehaviourConfig, autoEnabled: boolean) {
+    // If a manual plan is actively running and hasn't finished its duration,
+    // lock out autonomous decisions so Cherri's manual performance is never cut short.
+    if (this.manualPlanActive) {
+      if (this.clock < this.manualPlanUntil) {
+        if (!this.forcedPlanRequested) {
+          return;
+        }
+      } else {
+        this.manualPlanActive = false;
+      }
+    }
+
+    // Do not spend thoughts/cooldowns on performances that cannot execute.
+    if ((!autoEnabled && !this.forcedPlanRequested && !this.plan) ||
+        this.manualBeat || this.overridesActive()) return;
+    const next = this.mindV3.tick(dtMs, autoEnabled || this.forcedPlanRequested);
+    const mood = this.mindV3.mood;
+    if (mood !== this.mood) this.setMood(mood);
+    if (!next) return;
+    const isForced = this.forcedPlanRequested;
+    this.forcedPlanRequested = false;
+    // Manual inspection, the legacy Motion overrides, and a running special
+    // action all outrank the director. Dropping the plan is safe: the mind has
+    // already scheduled when it will think again.
+    if ((!autoEnabled && !isForced) || this.manualBeat || this.overridesActive()) return;
+    if (isForced) {
+      this.manualPlanActive = true;
+      this.manualPlanUntil = this.clock + next.durationMs;
+    }
+    this.startPlan(next, cfg);
+  }
+
+  private overridesActive() {
+    return (
+      this.mindIntentionOverride !== null ||
+      this.mindDestinationOverride !== null ||
+      this.mindDepthOverride !== null
+    );
+  }
+
+  private clearPlan() {
+    this.plan = null;
+    this.planCursor = 0;
+    this.planStartedAt = 0;
+    this.manualPlanActive = false;
+    this.manualPlanUntil = 0;
+    this.primitiveId = null;
+    this.primitiveStartedAt = -1;
+    Object.assign(this.primitiveFrame, ZERO_FRAME);
+  }
+
+  private startPlan(plan: MindPlan, cfg: BehaviourConfig) {
+    // A micro-life cue must never wipe an authored performance mid-phrase.
+    if (
+      this.plan &&
+      plan.category === "MICRO" &&
+      this.clock < this.planStartedAt + this.plan.durationMs
+    ) {
+      return;
+    }
+    // An active manual performance must never be overwritten mid-phrase.
+    if (
+      this.plan &&
+      this.manualPlanActive &&
+      this.clock < this.manualPlanUntil &&
+      !this.forcedPlanRequested
+    ) {
+      return;
+    }
+    this.clearBeatCues();
+    this.plan = plan;
+    this.planStartedAt = this.clock;
+    this.planCursor = 0;
+    this.lastStoryId = plan.storyId;
+    this.lastIntention = plan.intention;
+    this.lastDestination = plan.destination;
+    this.beatUntil = this.clock + plan.durationMs;
+    this.activityId = this.primaryOf(plan);
+    this.activityStartedAt = this.clock;
+    this.activityUntil = this.beatUntil;
+    // Idle scheduling stands down for the length of the performance so a free
+    // glance never cuts across an authored one.
+    this.nextBeatAt = this.beatUntil + this.interval(400, 900, cfg);
+    this.nextGazeAt = this.nextBeatAt;
+
+    // Compiler owns all journeys. Never infer travel from plan metadata.
+    if (plan.facing) this.applyFacing(plan.facing, !!plan.holdFacing);
+    if (plan.category === "INTERACTION") {
+      this.travelProgress = 1;
+      this.transitYaw = 0;
+      this.transitPitch = 0;
+      this.travelTargetX = this.worldXTarget;
+      this.travelTargetY = this.worldYTarget;
+    }
+
+    this.runPlanCues(cfg);
+  }
+
+  /** A readable id for the activity readout: the first real body cue. */
+  private primaryOf(plan: MindPlan): BehaviourId {
+    for (const cue of plan.cues) {
+      if (cue.body) return cue.body;
+      if (cue.special && cue.special !== "SPIN_360") return cue.special;
+      if (cue.special === "SPIN_360") return "SPIN_360";
+    }
+    for (const cue of plan.cues) {
+      if (cue.gaze) return cue.gaze;
+      if (cue.expression) return cue.expression;
+    }
+    return "REST";
+  }
+
+  private runPlanCues(cfg: BehaviourConfig) {
+    const plan = this.plan;
+    if (!plan) return;
+    const elapsed = this.clock - this.planStartedAt;
+    while (
+      this.planCursor < plan.cues.length &&
+      plan.cues[this.planCursor].atMs <= elapsed
+    ) {
+      const cue = plan.cues[this.planCursor];
+      this.planCursor += 1;
+      this.applyCue(cue, cfg);
+    }
+    if (elapsed >= plan.durationMs && this.planCursor >= plan.cues.length) {
+      this.onPlanCompleted(plan);
+      this.plan = null;
+      this.manualPlanActive = false;
+      this.manualPlanUntil = 0;
+      if (this.beatUntil <= this.clock) this.beatUntil = 0;
+    }
+  }
+
+  private onPlanCompleted(plan: MindPlan) {
+    // Notify MindV3 memory that the plan finished in the destination zone
+    this.mindV3.observeZone(this.currentSpatialZone);
+
+    const policy = plan.returnPolicy ?? this.travelReturnPolicy;
+    if (policy === "RETURN") {
+      if (this.currentSpatialZone !== "CENTER") {
+        this.applyDestination("CENTER", undefined, "DRIFT", "FLOAT", "HOLD");
+      }
+    } else if (policy === "BOUNCE") {
+      this.applyDestination("CENTER", undefined, "DART", "FLOAT", "HOLD");
+    } else if (policy === "HOLD" || policy === "HOLD_BRIEFLY") {
+      // Hold position in current zone
+    }
+
+    // Default arrival facing MUST decay back to 0 degrees (neutral viewer-facing),
+    // unless the plan explicitly requests holding facing.
+    if (!plan.holdFacing) {
+      this.targetBaseYaw = 0;
+      this.targetBasePitch = 0;
+      this.storyHoldsFacing = false;
+      this.activeFacingIntent = "FORWARD";
+    }
+  }
+
+  private applyCue(cue: MindCue, cfg: BehaviourConfig) {
+    if (cue.destination) {
+      this.applyDestination(
+        cue.destination,
+        cue.depth,
+        cue.movementProfile ?? this.plan?.movementProfile ?? "EXPLORE",
+        cue.movementMode ?? this.plan?.movementMode ?? "FLOAT",
+        cue.returnPolicy ?? this.plan?.returnPolicy ?? "HOLD",
+        cue.facing ?? this.plan?.facing
+      );
+    } else if (cue.depth !== undefined) {
+      this.worldDepthTarget = clamp(cue.depth, -0.2, 0.2);
+    }
+    if (cue.movementMode === "STAY" && !cue.destination) {
+      this.travelProgress = 1;
+      this.travelTargetX = this.worldXTarget;
+      this.travelTargetY = this.worldYTarget;
+      this.transitYaw = 0;
+      this.transitPitch = 0;
+    }
+    if (cue.facing) {
+      this.applyFacing(cue.facing, !!cue.holdFacing);
+    }
+    if (cue.gaze) this.startGaze(cue.gaze, cfg);
+    if (cue.expression) this.startExpression(cue.expression);
+    if (cue.mouth) this.startMouth(cue.mouth);
+    if (cue.body) this.startBody(cue.body, cfg);
+    if (cue.special === "SPIN_360") this.startSpin();
+    else if (cue.special) this.startSpecial(cue.special, cfg);
+    if (cue.primitive) this.startPrimitive(cue.primitive, cue.amount ?? 1, cue.dir ?? 0);
+    if (cue.blink && this.blinkStartedAt < 0) this.startBlink(false, cfg);
+  }
+
+  private applyFacing(facing: FacingIntent, holdFacing = false) {
+    this.activeFacingIntent = facing;
+    this.storyHoldsFacing = holdFacing;
+    switch (facing) {
+      case "FORWARD":
+        this.targetBaseYaw = 0;
+        this.targetBasePitch = 0;
+        this.currentYawSource = "NEUTRAL";
+        break;
+      case "LOOK_LEFT":
+        this.targetBaseYaw = -14;
+        this.targetBasePitch = 0;
+        this.currentYawSource = "STORY";
+        break;
+      case "LOOK_RIGHT":
+        this.targetBaseYaw = 14;
+        this.targetBasePitch = 0;
+        this.currentYawSource = "STORY";
+        break;
+      case "LOOK_UP":
+        this.targetBaseYaw = 0;
+        this.targetBasePitch = -10;
+        this.currentYawSource = "STORY";
+        break;
+      case "LOOK_DOWN":
+        this.targetBaseYaw = 0;
+        this.targetBasePitch = 8;
+        this.currentYawSource = "STORY";
+        break;
+      case "FACE_TRAVEL":
+        this.targetBaseYaw = 0;
+        this.targetBasePitch = 0;
+        this.currentYawSource = "VELOCITY";
+        break;
+      case "FACE_TARGET": {
+        const destPose = DESTINATION_POSES[this.targetSpatialZone];
+        const dx = destPose.x - this.worldXTarget;
+        this.targetBaseYaw = Math.sign(dx) * Math.min(14, Math.abs(dx) * 0.14);
+        this.targetBasePitch = 0;
+        this.currentYawSource = "STORY";
+        break;
+      }
+    }
+  }
+
+  /** Retargets the character with spatial arc and physical timing. */
+  private applyDestination(
+    destination: BlobDestination,
+    depth?: number,
+    profile: MovementProfile = "EXPLORE",
+    mode: MovementMode = "FLOAT",
+    returnPolicy: ReturnPolicy = "HOLD",
+    facingIntent?: FacingIntent
+  ) {
+    const pose = DESTINATION_POSES[destination];
+    this.targetSpatialZone = destination;
+    this.travelProfile = profile;
+    this.travelMode = mode;
+    this.travelReturnPolicy = returnPolicy;
+    this.lastDestination = destination;
+
+    this.travelStartX = this.worldXTarget;
+    this.travelStartY = this.worldYTarget;
+    this.travelStartYaw = this.travelYawTarget;
+    this.travelStartPitch = this.travelPitchTarget;
+    this.travelStartDepth = this.worldDepthTarget;
+
+    this.travelTargetX = pose.x;
+    this.travelTargetY = pose.y;
+    this.travelTargetDepth = clamp(depth ?? pose.depth, -0.2, 0.2);
+
+    const dx = this.travelTargetX - this.travelStartX;
+    const dy = this.travelTargetY - this.travelStartY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    // Compute peak dynamic transit yaw based on velocity/direction:
+    // Yaw turns smoothly into the direction of motion during travel,
+    // peaking mid-transit and decaying back to 0° upon arrival.
+    if (Math.abs(dx) > 4) {
+      const peakYawMagnitude = Math.min(15, Math.abs(dx) * 0.15);
+      this.travelPeakYaw = Math.sign(dx) * Math.max(6, peakYawMagnitude);
+      this.currentYawSource = "VELOCITY";
+    } else {
+      this.travelPeakYaw = 0;
+    }
+
+    if (Math.abs(dy) > 10) {
+      this.travelPeakPitch = Math.sign(dy) * Math.min(8, Math.abs(dy) * 0.08);
+    } else {
+      this.travelPeakPitch = 0;
+    }
+
+    if (facingIntent) {
+      this.applyFacing(facingIntent, this.storyHoldsFacing);
+    } else if (!this.storyHoldsFacing) {
+      this.targetBaseYaw = 0;
+      this.targetBasePitch = 0;
+      this.activeFacingIntent = "FORWARD";
+      if (this.travelPeakYaw === 0) {
+        this.currentYawSource = "NEUTRAL";
+      }
+    }
+
+    if (dist < 1) {
+      this.currentSpatialZone = destination;
+      this.worldXTarget = this.travelTargetX;
+      this.worldYTarget = this.travelTargetY;
+      this.worldDepthTarget = this.travelTargetDepth;
+      this.travelProgress = 1;
+      this.transitYaw = 0;
+      this.transitPitch = 0;
+      if (!this.storyHoldsFacing) {
+        this.targetBaseYaw = 0;
+        this.targetBasePitch = 0;
+      }
+      return;
+    }
+
+    let duration: number;
+    switch (profile) {
+      case "PLAY":
+      case "STARTLED":
+      case "DART":
+        duration = Math.max(380, dist * 3.2);
+        break;
+      case "TIPTOE":
+        duration = Math.max(750, dist * 6.5);
+        break;
+      case "SLEEPY":
+        duration = Math.max(1800, dist * 15);
+        break;
+      case "SHY":
+      case "INSPECT":
+      case "SNEAK":
+        duration = Math.max(900, dist * 7.8);
+        break;
+      case "AFFECTION":
+      case "DRIFT":
+        duration = Math.max(700, dist * 5.8);
+        break;
+      case "FLOAT":
+      case "EXPLORE":
+      default:
+        duration = Math.max(500, dist * 4.6);
+        break;
+    }
+    this.travelDuration = clamp(duration, 350, 2400);
+    this.travelProgress = 0;
+  }
+
+  private updateTravel(dtMs: number) {
+    const dt = Math.max(0, Math.min(dtMs, 100));
+
+    if (this.travelProgress < 1) {
+      this.travelProgress = Math.min(1, this.travelProgress + dt / this.travelDuration);
+      const t = this.travelProgress;
+
+      // Profile-based easing
+      let easedT: number;
+      if (this.travelProfile === "DART") {
+        easedT = 1 - Math.pow(1 - t, 2.5);
+      } else {
+        easedT = t * t * (3 - 2 * t);
+      }
+
+      // Buoyant vertical lift arc: wafts up during travel, settles down at destination
+      let liftAmplitude = 0;
+      if (this.travelMode === "FLOAT" || this.travelMode === "DRIFT") {
+        liftAmplitude = 16;
+      } else if (this.travelProfile === "DART") {
+        liftAmplitude = 9;
+      } else if (this.travelProfile === "SNEAK" || this.travelProfile === "TIPTOE") {
+        liftAmplitude = 6;
+      } else if (this.travelProfile !== "REST") {
+        liftAmplitude = 12;
+      }
+      const liftOffset = -liftAmplitude * Math.sin(Math.PI * t);
+
+      // Bell curve for transit yaw: rises dynamically into travel direction mid-transit
+      const transitBell = Math.pow(Math.sin(Math.PI * t), 0.85);
+      this.transitYaw = this.travelPeakYaw * transitBell;
+      this.transitPitch = this.travelPeakPitch * transitBell;
+
+      this.worldXTarget = mix(this.travelStartX, this.travelTargetX, easedT);
+      this.worldYTarget = mix(this.travelStartY, this.travelTargetY, easedT) + liftOffset;
+      this.worldDepthTarget = mix(this.travelStartDepth, this.travelTargetDepth, easedT);
+
+      this.travelYawTarget = mix(this.travelStartYaw, this.targetBaseYaw, easedT) + this.transitYaw;
+      this.travelPitchTarget = mix(this.travelStartPitch, this.targetBasePitch, easedT) + this.transitPitch;
+      this.worldRotationTarget = this.travelYawTarget * 0.14;
+
+      if (this.travelProgress >= 1) {
+        this.currentSpatialZone = this.targetSpatialZone;
+        this.worldXTarget = this.travelTargetX;
+        this.worldYTarget = this.travelTargetY;
+        this.worldDepthTarget = this.travelTargetDepth;
+        this.transitYaw = 0;
+        this.transitPitch = 0;
+        if (!this.storyHoldsFacing) {
+          this.targetBaseYaw = 0;
+          this.targetBasePitch = 0;
+        }
+      }
+    }
+
+    // Exponential decay towards targetBaseYaw (settles to 0° neutral viewer-facing)
+    if (this.travelProgress >= 1) {
+      const decayRate = 1 - Math.exp(-dt / 180);
+      this.travelYawTarget = mix(this.travelYawTarget, this.targetBaseYaw, decayRate);
+      this.travelPitchTarget = mix(this.travelPitchTarget, this.targetBasePitch, decayRate);
+      if (Math.abs(this.travelYawTarget - this.targetBaseYaw) < 0.05) {
+        this.travelYawTarget = this.targetBaseYaw;
+      }
+      if (Math.abs(this.travelPitchTarget - this.targetBasePitch) < 0.05) {
+        this.travelPitchTarget = this.targetBasePitch;
+      }
+      this.worldRotationTarget = this.travelYawTarget * 0.14;
+
+      if (Math.abs(this.travelYawTarget) <= 0.1 && this.targetBaseYaw === 0) {
+        this.currentYawSource = "NEUTRAL";
+        this.activeFacingIntent = "FORWARD";
+      }
+    }
+  }
+
+  private startPrimitive(id: PrimitiveId, amount: number, dir: number) {
+    this.primitiveId = id;
+    this.primitiveStartedAt = this.clock;
+    this.primitiveAmount = clamp(amount, 0, 1.6);
+    this.primitiveDir = dir;
+  }
+
+  /**
+   * Primitives are additive deltas sampled from a pure function, so they layer
+   * on top of the existing spring targets rather than fighting them.
+   */
+  private updatePrimitive() {
+    if (this.primitiveId === null || this.primitiveStartedAt < 0) {
+      if (
+        this.primitiveFrame.x !== 0 ||
+        this.primitiveFrame.y !== 0 ||
+        this.primitiveFrame.scale !== 0
+      ) {
+        Object.assign(this.primitiveFrame, ZERO_FRAME);
+      }
+      return;
+    }
+    const meta = PRIMITIVES[this.primitiveId];
+    const t = (this.clock - this.primitiveStartedAt) / meta.durationMs;
+    if (t >= 1) {
+      this.primitiveId = null;
+      this.primitiveStartedAt = -1;
+      Object.assign(this.primitiveFrame, ZERO_FRAME);
+      return;
+    }
+    const frame = samplePrimitive(
+      this.primitiveId,
+      t,
+      this.primitiveAmount,
+      this.primitiveDir,
+      this.primitiveScratch
+    );
+    Object.assign(this.primitiveFrame, frame);
   }
 
   private ensureSchedule(cfg: BehaviourConfig) {
@@ -845,12 +1675,12 @@ export class BehaviourController {
   private updateStoryTravel() {
     const story = this.currentStory;
     if (!story || this.storyMoveApplied || this.clock < this.storyMoveAt) return;
-    this.travelXTarget = story.x;
-    this.travelYTarget = story.y;
+    this.worldXTarget = story.x;
+    this.worldYTarget = story.y;
     // A small roll sells weight; yaw is rendered separately as depth.
-    this.travelRotationTarget = story.yaw * 0.14;
-    this.travelScaleYTarget = 0;
-    this.travelDepthTarget = story.depth;
+    this.worldRotationTarget = story.yaw * 0.14;
+    this.localBodyScaleY = 0;
+    this.worldDepthTarget = story.depth;
     this.travelYawTarget = story.yaw;
     this.travelPitchTarget = story.pitch;
     this.storyMoveApplied = true;
@@ -950,7 +1780,7 @@ export class BehaviourController {
   }
 
   private startGaze(id: BehaviourId, cfg: BehaviourConfig) {
-    const amount = clamp(cfg.gazePx, 0, 11);
+    const amount = clamp(cfg.gazePx, 0, 11) * (this.plan?.category === "MICRO" ? 0.22 : 1);
     let x = 0;
     let y = 0;
     let bodyDir = 0;
@@ -990,8 +1820,8 @@ export class BehaviourController {
     this.gazeReleaseAt = this.clock + duration;
     this.retargetEyes();
     this.followAt = this.clock + 85 + this.rand() * 35;
-    this.followXTarget = bodyDir * 3;
-    this.followRotationTarget = bodyDir * 1.25;
+    this.followXTarget = this.plan?.category === "MICRO" ? 0 : bodyDir * 3;
+    this.followRotationTarget = this.plan?.category === "MICRO" ? 0 : bodyDir * 1.25;
     this.followScaleYTarget = y < -1 ? 0.025 : y > 1 ? -0.022 : -0.012;
     // A gaze shift gets a small confirming blink after the eyes land. The
     // seeded interval still controls ordinary blinks; this only moves the next
@@ -1014,6 +1844,67 @@ export class BehaviourController {
     this.leftPupilY.target = clamp(y * 0.5, -4.2, 4.2);
     this.rightPupilX.target = clamp(x * 0.59, -5.2, 5.2);
     this.rightPupilY.target = clamp(y * 0.48, -4, 4);
+  }
+
+  /**
+   * The stance each expression puts the cloud into. See the `posture` field.
+   *
+   * lift  negative lifts him (buoyant, alert); positive sinks him (sad, tired)
+   * puff  positive inflates the silhouette; negative compresses it (tense)
+   * depth positive leans toward the viewer (interest); negative withdraws
+   * lean  a small roll, for the off-balance expressions
+   */
+  private static readonly EXPRESSION_POSTURE: Record<
+    ExpressionBehaviour,
+    { lift: number; puff: number; depth: number; lean: number }
+  > = {
+    // Happy: a gentle lift and puff — he inflates slightly with the smile.
+    HAPPY_EYES: { lift: -3.4, puff: 0.026, depth: 0.03, lean: 0 },
+    // Excited: perkier crown and a real rise toward the viewer.
+    EXCITED_EYES: { lift: -6.2, puff: 0.05, depth: 0.06, lean: 0 },
+    // Curious: leans in and slightly over, as if approaching the thing.
+    CURIOUS_WIDE: { lift: -2.6, puff: 0.018, depth: 0.075, lean: 1.5 },
+    // Angry: compressed and tight; the cloud pulls itself in.
+    ANGRY_EYES: { lift: 1.6, puff: -0.055, depth: 0.045, lean: 0 },
+    ANGRY_BROWS: { lift: 1.2, puff: -0.042, depth: 0.035, lean: 0 },
+    // Sad: sags under its own weight and withdraws a little.
+    SAD_EYES: { lift: 5.4, puff: -0.036, depth: -0.05, lean: 0 },
+    // Sleepy: melts and settles — the heaviest sink of the set.
+    SLEEPY_EYES: { lift: 6.6, puff: -0.048, depth: -0.035, lean: 0.9 },
+    // Shy: shrinks back and away.
+    SHY_EYES: { lift: 2.4, puff: -0.05, depth: -0.08, lean: -1.4 },
+    // Love: warm, buoyant, close.
+    LOVE_EYES: { lift: -3.8, puff: 0.034, depth: 0.07, lean: 0 },
+    // Panic: braced and pulled back.
+    PANIC_EYES: { lift: -1.8, puff: -0.03, depth: -0.06, lean: 0 },
+    // Confused: off-axis and slightly slack.
+    CONFUSED_EYES: { lift: 1.0, puff: 0.012, depth: 0.02, lean: 2.2 },
+    // Deadpan: flat, faintly deflated. Reads as "unimpressed", not "asleep".
+    DEADPAN_EYES: { lift: 1.8, puff: -0.022, depth: 0.02, lean: 0 },
+    // The squints are small facial beats; their stance stays near neutral.
+    SOFT_SQUINT: { lift: -0.8, puff: 0.008, depth: 0.012, lean: 0 },
+    ONE_EYE_SQUINT_LEFT: { lift: -0.6, puff: 0.008, depth: 0.015, lean: -1.1 },
+    ONE_EYE_SQUINT_RIGHT: { lift: -0.6, puff: 0.008, depth: 0.015, lean: 1.1 },
+  };
+
+  /**
+   * Puts the body into an expression's stance, or back to neutral.
+   *
+   * Micro-life borrows the same expressions but must stay barely noticeable,
+   * so it gets a heavily muted share of the stance: the face still changes, the
+   * body only breathes with it.
+   */
+  private applyPosture(id: ExpressionBehaviour | null) {
+    const p = id ? BehaviourController.EXPRESSION_POSTURE[id] : null;
+    const scale = this.plan?.category === "MICRO" ? 0.3 : 1;
+    this.posture.lift = (p?.lift ?? 0) * scale;
+    this.posture.puff = (p?.puff ?? 0) * scale;
+    this.posture.depth = (p?.depth ?? 0) * scale;
+    this.posture.lean = (p?.lean ?? 0) * scale;
+    this.postureLift.target = this.posture.lift;
+    this.posturePuff.target = this.posture.puff;
+    this.postureDepth.target = this.posture.depth;
+    this.postureLean.target = this.posture.lean;
   }
 
   private startExpression(id: ExpressionBehaviour) {
@@ -1202,6 +2093,7 @@ export class BehaviourController {
     this.leftEyeStyle = style;
     this.rightEyeStyle = style;
     this.lidAction = id;
+    this.applyPosture(id);
     this.expressionReleaseAt = this.clock + duration;
     this.mark(id, duration + 300);
   }
@@ -1582,7 +2474,6 @@ export class BehaviourController {
       return;
     }
     const strength = clamp(cfg.squash / 0.032, 0.55, 1.35);
-    const storyOwnsTravel = this.currentStory !== null && this.storyMoveApplied;
     let sy = 0;
     let duration = 620;
     let dir = 0;
@@ -1621,14 +2512,14 @@ export class BehaviourController {
                           : 1420;
     } else if (id === "BODY_SETTLE") {
       sy = -0.064 * strength;
-      if (!storyOwnsTravel) this.travelYTarget = 6.2;
+      this.localBodyY = 6.2;
       this.massYTarget = 3.1;
       this.massScaleYTarget = -0.025 * strength;
       this.massOriginYTarget = 0.96;
       duration = 520;
     } else if (id === "TINY_SQUISH") {
       sy = -0.052 * strength;
-      if (!storyOwnsTravel) this.travelYTarget = 3.5;
+      this.localBodyY = 3.5;
       this.massYTarget = 1.6;
       this.massScaleYTarget = -0.02 * strength;
       this.massOriginYTarget = 0.94;
@@ -1636,10 +2527,8 @@ export class BehaviourController {
     } else if (id === "SOFT_SWAY_LEFT" || id === "SOFT_SWAY_RIGHT") {
       dir = id === "SOFT_SWAY_LEFT" ? -1 : 1;
       sy = -0.025 * strength;
-      if (!storyOwnsTravel) {
-        this.travelXTarget = dir * 5.8;
-        this.travelRotationTarget = dir * 1.75;
-      }
+      this.localBodyX = dir * 5.8;
+      this.localBodyRotation = dir * 1.75;
       this.massXTarget = dir * 3.9;
       this.massRotationTarget = dir * 1.45;
       this.massSkewYTarget = dir * 1.8;
@@ -1649,22 +2538,18 @@ export class BehaviourController {
       dir = id === "SIDE_SQUISH_LEFT" ? -1 : 1;
       const sx = -0.066 * strength;
       sy = 1 / (1 + sx) - 1;
-      if (!storyOwnsTravel) {
-        this.travelXTarget = dir * 6.6;
-        this.travelRotationTarget = dir * 1.05;
-      }
+      this.localBodyX = dir * 6.6;
+      this.localBodyRotation = dir * 1.05;
       this.massXTarget = dir * 4.8;
       this.massRotationTarget = dir * 1.7;
       this.massSkewYTarget = dir * 2.6;
       this.massOriginXTarget = -dir;
-      if (!storyOwnsTravel) this.travelScaleYTarget = sy;
+      this.localBodyScaleY = sy;
       this.massScaleYTarget = sy * 0.34;
       duration = 570;
     } else if (id === "TALL_STRETCH" || id === "BREATH_STRETCH") {
       sy = (id === "TALL_STRETCH" ? 0.082 : 0.058) * strength;
-      if (!storyOwnsTravel) {
-        this.travelYTarget = id === "TALL_STRETCH" ? -5 : -2.9;
-      }
+      this.localBodyY = id === "TALL_STRETCH" ? -5 : -2.9;
       this.massYTarget = -2.1;
       this.massScaleYTarget = sy * 0.38;
       this.massOriginYTarget = 0.98;
@@ -1672,10 +2557,8 @@ export class BehaviourController {
     } else {
       dir = id === "JELLY_TWIST_LEFT" ? -1 : 1;
       sy = 0.034 * strength;
-      if (!storyOwnsTravel) {
-        this.travelXTarget = dir * 4.7;
-        this.travelRotationTarget = dir * 1.55;
-      }
+      this.localBodyX = dir * 4.7;
+      this.localBodyRotation = dir * 1.55;
       this.massXTarget = dir * 3.5;
       this.massRotationTarget = dir * 3.2;
       this.massSkewXTarget = -dir * 1.8;
@@ -1684,14 +2567,10 @@ export class BehaviourController {
       duration = 670;
     }
     if (!dynamic && id !== "SIDE_SQUISH_LEFT" && id !== "SIDE_SQUISH_RIGHT") {
-      if (!storyOwnsTravel) this.travelScaleYTarget = sy;
+      this.localBodyScaleY = sy;
     }
     this.bodyAction = id;
     this.bodyStartedAt = this.clock;
-    this.bodyBaseTravelX = this.travelXTarget;
-    this.bodyBaseTravelY = this.travelYTarget;
-    this.bodyBaseRotation = this.travelRotationTarget;
-    this.bodyBaseScaleY = this.travelScaleYTarget;
     this.bodyReleaseAt = this.clock + duration;
     this.mark(id, duration + 750);
   }
@@ -1905,10 +2784,10 @@ export class BehaviourController {
       massRotation = offsetRotation * 0.72;
     }
 
-    this.travelXTarget = this.bodyBaseTravelX + offsetX;
-    this.travelYTarget = this.bodyBaseTravelY + offsetY;
-    this.travelRotationTarget = this.bodyBaseRotation + offsetRotation;
-    this.travelScaleYTarget = this.bodyBaseScaleY + offsetScaleY;
+    this.localBodyX = offsetX;
+    this.localBodyY = offsetY;
+    this.localBodyRotation = offsetRotation;
+    this.localBodyScaleY = offsetScaleY;
     this.massXTarget = massX;
     this.massYTarget = massY;
     this.massRotationTarget = massRotation;
@@ -2080,10 +2959,10 @@ export class BehaviourController {
   }
 
   private clearBodyTargets() {
-    // Travel targets are persistent world positions. Only the temporary
-    // deformation target resets when a body cue finishes, otherwise Blob would
-    // snap back to centre after every little thought.
-    this.travelScaleYTarget = 0;
+    this.localBodyX = 0;
+    this.localBodyY = 0;
+    this.localBodyRotation = 0;
+    this.localBodyScaleY = 0;
     this.massXTarget = 0;
     this.massYTarget = 0;
     this.massRotationTarget = 0;
@@ -2115,13 +2994,13 @@ export class BehaviourController {
     const strength = clamp(cfg.squash / 0.032, 0.8, 1.5);
     this.impactDirection = direction;
     this.impactAt = this.clock + 320;
-    this.travelXTarget = direction * 31;
-    this.travelRotationTarget = direction * 2.8;
+    this.localBodyX = direction * 31;
+    this.localBodyRotation = direction * 2.8;
     this.massXTarget = direction * 14.5;
     this.massRotationTarget = direction * 3.8;
     this.massSkewYTarget = direction * 3.2;
     this.massOriginXTarget = -direction;
-    this.travelScaleYTarget = 0.025 * strength;
+    this.localBodyScaleY = 0.025 * strength;
     this.massScaleYTarget = 0.018 * strength;
     this.bodyAction = id;
     this.bodyReleaseAt = this.clock + 1040;
@@ -2139,10 +3018,10 @@ export class BehaviourController {
     const wobbleEnvelope = Math.sin(Math.PI * t);
     const wobble = Math.sin(t * Math.PI * 4.2) * wobbleEnvelope;
     const bob = Math.sin(t * Math.PI * 1.8) * wobbleEnvelope;
-      this.travelXTarget = wobble * 6;
-    this.travelYTarget = bob * 3;
-    this.travelRotationTarget = wobble * 3.4;
-    this.travelScaleYTarget = (-0.035 + bob * 0.018) * wobbleEnvelope;
+    this.localBodyX = wobble * 6;
+    this.localBodyY = bob * 3;
+    this.localBodyRotation = wobble * 3.4;
+    this.localBodyScaleY = (-0.035 + bob * 0.018) * wobbleEnvelope;
     this.massXTarget = wobble * 6.6;
     this.massYTarget = bob * 3.5;
     this.massRotationTarget = wobble * 5.8;
@@ -2277,6 +3156,12 @@ export class BehaviourController {
     const steps = Math.max(1, Math.ceil(seconds * 120));
     const dt = seconds / steps;
     for (let i = 0; i < steps; i += 1) {
+      // Posture settles slowly and is critically damped, so an emotional
+      // stance reads as the body relaxing into a shape, never as a pop.
+      this.postureLift.step(dt, 2.5, 0.95);
+      this.posturePuff.step(dt, 2.3, 0.95);
+      this.postureDepth.step(dt, 2.2, 0.95);
+      this.postureLean.step(dt, 2.4, 0.95);
       this.leftX.step(dt, 9.4, 0.72);
       this.leftY.step(dt, 9.2, 0.72);
       this.rightX.step(dt, 7.9, 0.74);
@@ -2314,7 +3199,7 @@ export class BehaviourController {
   pose(): PoseDelta {
     const followActive = this.followReleaseAt > 0;
     const scaleY =
-      this.travelScaleYTarget + (followActive ? this.followScaleYTarget : 0);
+      this.localBodyScaleY + (followActive ? this.followScaleYTarget : 0);
     const horizontalSpeed = Math.max(
       Math.abs(this.leftX.velocity),
       Math.abs(this.rightX.velocity)
@@ -2326,31 +3211,45 @@ export class BehaviourController {
     const velocityNarrow = Math.min(0.065, horizontalSpeed * 0.00165);
     const velocityStretch = Math.min(0.075, verticalUpSpeed * 0.0021);
 
+    const prim = this.primitiveFrame;
     this.delta.blobX =
-      this.travelXTarget + (followActive ? this.followXTarget : 0);
-    this.delta.blobY = this.travelYTarget;
-    this.delta.blobDepth = this.travelDepthTarget;
+      this.worldXTarget + this.localBodyX + this.specialX + (followActive ? this.followXTarget : 0) + prim.x;
+    this.delta.blobY =
+      this.worldYTarget + this.localBodyY + this.specialY + prim.y + this.postureLift.value;
+    this.delta.blobDepth = clamp(
+      this.worldDepthTarget + this.postureDepth.value,
+      -0.2,
+      0.2
+    );
     // The manual 360 cue is a full unwrapped yaw around the vertical axis.
     // It must not also become a 2D canvas roll; that was why Blob lay sideways
     // in the old recording.
     this.delta.blobYaw = this.travelYawTarget + this.spinRotation;
     this.delta.blobPitch = this.travelPitchTarget;
     this.delta.blobRotation =
-      this.travelRotationTarget +
-      (followActive ? this.followRotationTarget : 0);
+      this.worldRotationTarget +
+      this.localBodyRotation +
+      (followActive ? this.followRotationTarget : 0) +
+      prim.rotation;
     this.delta.blobSpin = 0;
-    this.delta.blobScale = this.specialScale;
+    this.delta.blobScale = this.specialScale + prim.scale;
     this.delta.blobOpacity = this.specialOpacity;
     this.delta.faceStyle = this.faceStyle;
-    this.delta.blobScaleY = scaleY;
-    this.delta.blobScaleX = preserveAreaX(scaleY);
-    this.delta.bodyX = this.massXTarget;
-    this.delta.bodyY = this.massYTarget;
-    this.delta.bodyRotation = this.massRotationTarget;
-    this.delta.bodyScaleY = this.massScaleYTarget;
-    this.delta.bodyScaleX = preserveAreaX(this.massScaleYTarget);
-    this.delta.bodySkewX = this.massSkewXTarget;
-    this.delta.bodySkewY = this.massSkewYTarget;
+    // The emotional stance rides on top of everything else, so travel, squash
+    // and primitives all keep working exactly as before.
+    const totalScaleY = scaleY + prim.scaleY + this.posturePuff.value;
+    const totalMassScaleY =
+      this.massScaleYTarget + prim.massScaleY + this.posturePuff.value * 0.45;
+    this.delta.blobScaleY = totalScaleY;
+    this.delta.blobScaleX = preserveAreaX(totalScaleY);
+    this.delta.bodyX = this.massXTarget + prim.massX;
+    this.delta.bodyY = this.massYTarget + prim.massY + this.postureLift.value * 0.55;
+    this.delta.bodyRotation =
+      this.massRotationTarget + prim.massRotation + this.postureLean.value;
+    this.delta.bodyScaleY = totalMassScaleY;
+    this.delta.bodyScaleX = preserveAreaX(totalMassScaleY);
+    this.delta.bodySkewX = this.massSkewXTarget + prim.skewX;
+    this.delta.bodySkewY = this.massSkewYTarget + prim.skewY;
     this.delta.bodyOriginX = this.massOriginXTarget;
     this.delta.bodyOriginY = this.massOriginYTarget;
     this.delta.eyeX = 0;
@@ -2414,9 +3313,11 @@ export class BehaviourController {
       | "nextMouthMs"
       | "nextBodyMs"
       | "faceStyle"
+      | "mind"
     > {
     const active = this.clock < this.activityUntil;
     const mindState = this.mind.state();
+    const telemetry = this.mindTelemetry();
     const duration = Math.max(1, this.activityUntil - this.activityStartedAt);
     const next = Math.min(
       this.nextGazeAt,
@@ -2439,15 +3340,26 @@ export class BehaviourController {
       lids: this.lidAction,
       mouth: this.mouthAction,
       body: this.bodyAction,
-      intention: this.currentStory?.intention ?? this.lastIntention,
-      story: this.currentStory?.id ?? this.lastStoryId,
-      destination: this.currentStory?.destination ?? this.lastDestination,
+      intention: this.plan?.intention ?? this.currentStory?.intention ?? this.lastIntention,
+      story: this.plan?.storyId ?? this.currentStory?.id ?? this.lastStoryId,
+      destination:
+        this.targetSpatialZone ??
+        this.plan?.destination ??
+        this.currentStory?.destination ??
+        this.lastDestination,
       depth: this.delta.blobDepth,
       yaw: this.delta.blobYaw,
       pitch: this.delta.blobPitch,
-      energy: mindState.energy,
-      curiosity: mindState.curiosity,
-      memory: mindState.memory,
+      // Mind V3 owns these now; the legacy values only survive while the
+      // Motion panel's manual overrides are driving the old director.
+      energy: this.overridesActive() ? mindState.energy : telemetry.drives.energy,
+      curiosity: this.overridesActive()
+        ? mindState.curiosity
+        : telemetry.drives.curiosity,
+      memory: this.overridesActive()
+        ? mindState.memory
+        : telemetry.recentStories.slice(0, 3).join(" → ") || "new",
+      mind: telemetry,
       nextGazeMs: Math.max(0, this.nextGazeAt - this.clock),
       nextBlinkMs: Math.max(0, this.nextBlinkAt - this.clock),
       nextMouthMs: Math.max(0, this.nextMouthAt - this.clock),

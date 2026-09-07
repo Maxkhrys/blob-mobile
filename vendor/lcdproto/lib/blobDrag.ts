@@ -66,6 +66,22 @@ export interface DragPose {
   contactX: number;
   contactY: number;
   grabbed: boolean;
+  /** Grab pressure: 0 (free) to 1 (fully compressed under touch). */
+  grabPressure: number;
+  /** Contact position relative to Cherri's center. */
+  contactRelX: number;
+  contactRelY: number;
+  /** Distance from center to contact point in pixels. */
+  contactDistance: number;
+  /** Contact angle in radians. */
+  contactAngle: number;
+  /** Normal compression percentage (0 to ~0.16). */
+  normalCompression: number;
+  /** Tangent expansion percentage (0 to ~0.12). */
+  tangentExpansion: number;
+  /** Subtle surface-following face offset in pixels (~1-4px). */
+  faceShiftX: number;
+  faceShiftY: number;
 }
 
 export class BlobDragController {
@@ -73,6 +89,8 @@ export class BlobDragController {
   private readonly posY = new Spring();
   private readonly wobbleX = new Spring();
   private readonly wobbleY = new Spring();
+  private readonly grabPressureSpring = new Spring();
+  private grabSquishMultiplier = 1.0;
   private grabbed = false;
   /** Pointer target for Blob's centre, relative to the screen centre. */
   private targetX = 0;
@@ -80,6 +98,12 @@ export class BlobDragController {
   /** Offset between the pointer and Blob's centre at grab time. */
   private grabOffsetX = 0;
   private grabOffsetY = 0;
+  private contactRelX = 0;
+  private contactRelY = 0;
+  private contactNormalX = 0;
+  private contactNormalY = 0;
+  private contactDistance = 0;
+  private contactAngle = 0;
   private lastPointerX = 0;
   private lastPointerY = 0;
   private lastPointerAt = 0;
@@ -88,7 +112,7 @@ export class BlobDragController {
   private lastNormalX = 1;
   private lastNormalY = 0;
   private shakeEnergy = 0;
-  private readonly pose: DragPose = {
+  private readonly _pose: DragPose = {
     x: 0,
     y: 0,
     scaleX: 0,
@@ -103,6 +127,15 @@ export class BlobDragController {
     contactX: 0,
     contactY: 0,
     grabbed: false,
+    grabPressure: 0,
+    contactRelX: 0,
+    contactRelY: 0,
+    contactDistance: 0,
+    contactAngle: 0,
+    normalCompression: 0,
+    tangentExpansion: 0,
+    faceShiftX: 0,
+    faceShiftY: 0,
   };
 
   reset() {
@@ -110,11 +143,18 @@ export class BlobDragController {
     this.posY.reset();
     this.wobbleX.reset();
     this.wobbleY.reset();
+    this.grabPressureSpring.reset();
     this.grabbed = false;
     this.targetX = 0;
     this.targetY = 0;
     this.grabOffsetX = 0;
     this.grabOffsetY = 0;
+    this.contactRelX = 0;
+    this.contactRelY = 0;
+    this.contactNormalX = 0;
+    this.contactNormalY = 0;
+    this.contactDistance = 0;
+    this.contactAngle = 0;
     this.lastVelocityX = 0;
     this.lastVelocityY = 0;
     this.lastNormalX = 1;
@@ -126,13 +166,36 @@ export class BlobDragController {
     return this.grabbed;
   }
 
+  /** Set multiplier for tactile grab compression (0.5x, 0.75x, 1.0x, 1.25x). */
+  setGrabStrength(multiplier: number) {
+    this.grabSquishMultiplier = clamp(multiplier, 0.25, 2.0);
+  }
+
+  get grabStrength() {
+    return this.grabSquishMultiplier;
+  }
+
+  public pose(): DragPose {
+    return this._pose;
+  }
+
   /**
    * Starts a grab from wherever Blob currently is. The drag offset is relative
    * to the pointer's position at grab time, so he never jumps to the cursor.
    *
-   * @param pointerX 466-space pointer position.
+   * @param pointerX 466-space pointer position or relative offset.
+   * @param pointerY 466-space pointer position or relative offset.
+   * @param now Timestamp in ms.
+   * @param contactRelX Optional explicit contact X relative to Cherri's centre.
+   * @param contactRelY Optional explicit contact Y relative to Cherri's centre.
    */
-  begin(pointerX: number, pointerY: number, now: number) {
+  begin(
+    pointerX: number,
+    pointerY: number,
+    now: number,
+    contactRelX?: number,
+    contactRelY?: number
+  ) {
     this.grabbed = true;
     this.grabOffsetX = this.posX.value - pointerX;
     this.grabOffsetY = this.posY.value - pointerY;
@@ -143,6 +206,42 @@ export class BlobDragController {
     this.lastPointerAt = now;
     this.lastVelocityX = 0;
     this.lastVelocityY = 0;
+
+    // Contact vector relative to Cherri's center:
+    if (contactRelX !== undefined && contactRelY !== undefined) {
+      this.contactRelX = contactRelX;
+      this.contactRelY = contactRelY;
+    } else if (Math.hypot(pointerX, pointerY) <= 160) {
+      // Relative coordinates passed directly (e.g. simulation or test)
+      this.contactRelX = pointerX;
+      this.contactRelY = pointerY;
+    } else {
+      // Screen space [0, 466] -> offset from center (233, 233)
+      this.contactRelX = pointerX - 233 - this.posX.value;
+      this.contactRelY = pointerY - 233 - this.posY.value;
+    }
+
+    const dist = Math.hypot(this.contactRelX, this.contactRelY);
+    this.contactDistance = dist;
+    if (dist > 1e-3) {
+      this.contactNormalX = this.contactRelX / dist;
+      this.contactNormalY = this.contactRelY / dist;
+      this.contactAngle = Math.atan2(this.contactRelY, this.contactRelX);
+    } else {
+      this.contactNormalX = 0;
+      this.contactNormalY = 0;
+      this.contactAngle = 0;
+    }
+
+    // Initial press impulse:
+    // Instantly begins compressing on frame 0 (~65-80ms rise to 115-125% peak overshoot)
+    this.grabPressureSpring.velocity = 8.2 * this.grabSquishMultiplier;
+
+    // Tactile touch ripple into mass springs along the contact direction
+    if (dist > 10) {
+      this.wobbleX.velocity -= this.contactNormalX * 22 * this.grabSquishMultiplier;
+      this.wobbleY.velocity -= this.contactNormalY * 22 * this.grabSquishMultiplier;
+    }
   }
 
   move(pointerX: number, pointerY: number, now: number) {
@@ -256,11 +355,15 @@ export class BlobDragController {
           // Held: a heavy, liquid follow rather than a rigid cursor lock.
           this.posX.step(targetX, dt, 3.2, 0.74);
           this.posY.step(targetY, dt, 3.2, 0.74);
+          // Grab pressure rise: frequency 6.4Hz, damping 0.46 (~65-80ms rise with 115-125% impulse overshoot, settling by ~180ms)
+          this.grabPressureSpring.step(1.0 * this.grabSquishMultiplier, dt, 6.4, 0.46);
         } else {
           // Released: momentum is preserved, so he carries on, overshoots his
           // resting place once, and settles.
           this.posX.step(0, dt, cloud ? 1.35 : 1.55, cloud ? 0.78 : 0.44);
           this.posY.step(0, dt, cloud ? 1.35 : 1.55, cloud ? 0.78 : 0.44);
+          // Grab pressure release: frequency 2.7Hz, damping 0.60 (~100-140ms rebound pop-back past neutral, ~350ms settle)
+          this.grabPressureSpring.step(0, dt, 2.7, 0.60);
         }
 
         // A spring can overshoot a target. Resolve that overshoot every
@@ -273,79 +376,150 @@ export class BlobDragController {
         if (actualRadius > boundary && actualRadius > 1e-4) {
           const nx = actualX / actualRadius;
           const ny = actualY / actualRadius;
-          this.posX.value = nx * boundary - baseX;
-          this.posY.value = ny * boundary - baseY;
-          const outwardVelocity = this.posX.velocity * nx + this.posY.velocity * ny;
-          if (outwardVelocity > 0) {
-            this.posX.velocity -= nx * outwardVelocity;
-            this.posY.velocity -= ny * outwardVelocity;
+          if (this.grabbed || Math.hypot(this.posX.value, this.posY.value) > 1e-2) {
+            this.posX.value = nx * boundary - baseX;
+            this.posY.value = ny * boundary - baseY;
+            const outwardVelocity = this.posX.velocity * nx + this.posY.velocity * ny;
+            if (outwardVelocity > 0) {
+              this.posX.velocity -= nx * outwardVelocity;
+              this.posY.velocity -= ny * outwardVelocity;
+            }
+          } else {
+            this.posX.value = 0;
+            this.posY.value = 0;
           }
         }
         this.wobbleX.step(0, dt, 3.4, cloud ? 0.8 : 0.3);
         this.wobbleY.step(0, dt, 3.6, cloud ? 0.8 : 0.32);
       }
+      this.grabPressureSpring.value = clamp(
+        this.grabPressureSpring.value,
+        -0.15,
+        1.45 * this.grabSquishMultiplier
+      );
       this.shakeEnergy = Math.max(0, this.shakeEnergy - seconds * 1.6);
     }
+
+    // Grab pressure calculation:
+    // Allow slight negative dip (-0.12) during release rebound for outward pop-back
+    const rawGrabPressure = clamp(this.grabPressureSpring.value, -0.15, 1.4);
+    const dragSpeed = Math.hypot(this.lastVelocityX, this.lastVelocityY);
+    // Drag speed damping maintains a strong grip floor (stationary 100%, slow drag 85-100%, med 65-80%, fast 40-60%)
+    const dragSpeedDamp = 0.42 + 0.58 / (1 + dragSpeed * 0.0014);
+    const activeGrabPress = rawGrabPressure * dragSpeedDamp;
+
+    const relRadius = clamp(this.contactDistance / Math.max(1, radiusOfBlob), 0, 1.2);
+    const isCenterPress = relRadius < 0.25;
+
+    // Base tactile grab squish: roughly 15-20% visible compression, 10-14% compensating tangent expansion
+    const grabNormalComp = clamp(0.17 * activeGrabPress, -0.06, 0.24);
+    const grabTangentExp = clamp(0.12 * activeGrabPress, -0.05, 0.18);
 
     // Wall contact deformation, derived from where he actually is.
     const x = this.posX.value;
     const y = this.posY.value;
     const radius = Math.hypot(x + baseX, y + baseY);
     const nearWallStart = Math.max(0, contactLimit - pressureTravel * 0.72);
-    const contact = clamp(
-      (radius - nearWallStart) / Math.max(1, contactLimit - nearWallStart),
-      0,
-      1
-    );
+    const contact = (this.grabbed || Math.hypot(x, y) > 1)
+      ? clamp(
+          (radius - nearWallStart) / Math.max(1, contactLimit - nearWallStart),
+          0,
+          1
+        )
+      : 0;
     const rawPressure = Math.max(contact, pullPressure);
     const pressure = rawPressure * rawPressure * (3 - 2 * rawPressure);
-    const normalX =
+    const normalX_wall =
       pullPressure > 0
         ? requestedNormalX
         : radius > 1e-4
           ? (x + baseX) / radius
           : this.lastNormalX;
-    const normalY =
+    const normalY_wall =
       pullPressure > 0
         ? requestedNormalY
         : radius > 1e-4
           ? (y + baseY) / radius
           : this.lastNormalY;
-    this.lastNormalX = normalX;
-    this.lastNormalY = normalY;
+    this.lastNormalX = normalX_wall;
+    this.lastNormalY = normalY_wall;
 
-    // Local x is tangent to the wall and local y points into its normal. This
-    // creates real directional squash instead of independent horizontal and
-    // vertical scaling that only looks correct on the side walls.
-    const tangentAngle = Math.atan2(normalY, normalX) + Math.PI / 2;
-    let deformAngle = (tangentAngle * 180) / Math.PI;
+    // Blend wall contact deformation with grab squish:
+    // Wall pressure smoothly dominates when pushed into the bezel to prevent double-pancake stacking.
+    const wallWeight = clamp(pressure * 1.6, 0, 1);
+    const grabWeight = 1 - wallWeight;
+
+    const wallCompression = MAX_NORMAL_COMPRESSION * pressure + this.shakeEnergy * 0.035;
+    const wallExpansion = MAX_TANGENT_EXPANSION * pressure + this.shakeEnergy * 0.055;
+
+    const combinedCompression = Math.max(
+      wallCompression,
+      wallCompression * 0.4 + grabNormalComp * grabWeight
+    );
+    const combinedExpansion = Math.max(
+      wallExpansion,
+      wallExpansion * 0.4 + grabTangentExp * grabWeight
+    );
+
+    // Directional orientation:
+    let normalX = normalX_wall;
+    let normalY = normalY_wall;
+    let deformAngle = 90;
+
+    if (pressure > 0.08) {
+      // Wall contact dominates
+      const tangentAngle = Math.atan2(normalY, normalX) + Math.PI / 2;
+      deformAngle = (tangentAngle * 180) / Math.PI;
+    } else if (activeGrabPress > 0.01 && !isCenterPress) {
+      // Off-center grab contact dominates
+      normalX = this.contactNormalX;
+      normalY = this.contactNormalY;
+      const tangentAngle = Math.atan2(normalY, normalX) + Math.PI / 2;
+      deformAngle = (tangentAngle * 180) / Math.PI;
+    } else {
+      // Center press: symmetrical compression
+      normalX = 0;
+      normalY = 1;
+      deformAngle = 90;
+    }
+
     while (deformAngle > 90) deformAngle -= 180;
     while (deformAngle < -90) deformAngle += 180;
-    const compression =
-      MAX_NORMAL_COMPRESSION * pressure + this.shakeEnergy * 0.035;
-    const expansion =
-      MAX_TANGENT_EXPANSION * pressure + this.shakeEnergy * 0.055;
-    // Whole-character deformation stays quiet; body deformation carries the
-    // visible contact. Face remains attached to that same surface transform.
-    this.pose.scaleX = 0;
-    this.pose.scaleY = 0;
-    this.pose.bodyScaleX = clamp(expansion, 0, 0.44);
-    this.pose.bodyScaleY = clamp(-compression, -0.38, 0);
-    this.pose.deformAngle = deformAngle;
-    // A diagonal impact leans a little, while cardinal impacts stay planted.
-    this.pose.rotation = clamp(
-      pressure * 5.2 * normalX * normalY + this.wobbleX.value * 0.04,
+
+    // Face shift: surface follows inward compression by ~3-7px
+    const faceShiftAmount = activeGrabPress * 5.8 * Math.min(1.2, 0.25 + relRadius * 0.95);
+    const faceShiftX = -this.contactNormalX * faceShiftAmount;
+    const faceShiftY = -this.contactNormalY * faceShiftAmount;
+
+    this._pose.scaleX = 0;
+    this._pose.scaleY = 0;
+    this._pose.bodyScaleX = clamp(combinedExpansion, 0, 0.44);
+    this._pose.bodyScaleY = clamp(-combinedCompression, -0.38, 0);
+    this._pose.deformAngle = deformAngle;
+    this._pose.rotation = clamp(
+      pressure * 5.2 * normalX * normalY +
+        (activeGrabPress > 0.01 && !isCenterPress ? this.contactNormalX * this.contactNormalY * activeGrabPress * 2.8 : 0) +
+        this.wobbleX.value * 0.04,
       -5,
       5
     );
-    this.pose.skewX = clamp(-this.wobbleX.value * 0.06, -5, 5);
-    this.pose.skewY = clamp(this.wobbleY.value * 0.04, -3, 3);
-    this.pose.x = x + this.wobbleX.value;
-    this.pose.y = y + this.wobbleY.value;
-    this.pose.wallPressure = pressure;
-    this.pose.contactX = normalX;
-    this.pose.contactY = normalY;
-    this.pose.grabbed = this.grabbed;
-    return this.pose;
+    this._pose.skewX = clamp(-this.wobbleX.value * 0.06, -5, 5);
+    this._pose.skewY = clamp(this.wobbleY.value * 0.04, -3, 3);
+    this._pose.x = x + this.wobbleX.value;
+    this._pose.y = y + this.wobbleY.value;
+    this._pose.wallPressure = pressure;
+    this._pose.contactX = normalX;
+    this._pose.contactY = normalY;
+    this._pose.grabbed = this.grabbed;
+    this._pose.grabPressure = activeGrabPress;
+    this._pose.contactRelX = this.contactRelX;
+    this._pose.contactRelY = this.contactRelY;
+    this._pose.contactDistance = this.contactDistance;
+    this._pose.contactAngle = this.contactAngle;
+    this._pose.normalCompression = combinedCompression;
+    this._pose.tangentExpansion = combinedExpansion;
+    this._pose.faceShiftX = faceShiftX;
+    this._pose.faceShiftY = faceShiftY;
+    return this._pose;
   }
 }

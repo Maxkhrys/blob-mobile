@@ -1,4 +1,5 @@
 import type { BlobDestination, BlobIntention } from "../blobMind";
+import type { MindTelemetry } from "../mind/types";
 import { FACE_STYLE } from "../blobRig";
 
 export type BehaviourId =
@@ -333,4 +334,6 @@ export interface HomeActivityStatus extends BehaviourStatus {
   bodyRotation: number;
   bodySpeed: number;
   faceStyle: number;
+  /** Mind V2 readout. Absent only while a caller builds a status by hand. */
+  mind?: MindTelemetry;
 }

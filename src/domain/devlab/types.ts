@@ -1,8 +1,8 @@
 import type { CloudSettingsValues } from "../character/cloudSliders";
 
-export const LCDPROTO_SOURCE_BRANCH = "feat/cloud-physics-disney-defaults" as const;
+export const LCDPROTO_SOURCE_BRANCH = "tune/cherri-grab-squish-visible" as const;
 export const LCDPROTO_SOURCE_SHA =
-  "a46067f44703f32b2f22e6e618b0eb54f71b147e" as const;
+  "a9ce979b5a60c2b3b8301ff7fe40b46106b6ce0a" as const;
 export const LCDPROTO_MAIN_REFERENCE_SHA =
   "bd2460fbc78c1d1e6dfe9cac4b362ddd887df6c3" as const;
 

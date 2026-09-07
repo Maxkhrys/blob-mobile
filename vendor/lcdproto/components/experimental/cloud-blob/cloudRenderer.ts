@@ -320,10 +320,14 @@ function drawFace(ctx: CanvasRenderingContext2D, o: RenderOptions) {
   const profileAmount = Math.max(0, Math.abs(yawSin) - 0.78);
   const faceVisibility = clamp(1 - profileAmount * 2.0, 0.35, 1);
 
+  const faceShiftX = p.faceShiftX ?? 0;
+  const faceShiftY = p.faceShiftY ?? 0;
+  const grabPress = p.grabPressure ?? 0;
+
   ctx.save();
   ctx.translate(
-    core.x + (face.offsetX ?? 0) + faceTurnX,
-    core.y + (face.offsetY ?? 0) + faceTurnY
+    core.x + (face.offsetX ?? 0) + faceTurnX + faceShiftX,
+    core.y + (face.offsetY ?? 0) + faceTurnY + faceShiftY
   );
   ctx.rotate(core.rotation * 0.65 + yawSin * 0.08);
   ctx.scale(
@@ -339,8 +343,28 @@ function drawFace(ctx: CanvasRenderingContext2D, o: RenderOptions) {
 
     // Where this eye ends up once the face plane has turned. Everything about
     // the eye's position and prominence comes from this one projection.
-    const baseX = a.x - size / 2;
+    let baseX = a.x - size / 2;
     const baseY = a.y - size / 2;
+
+    // Physical surface reaction:
+    // When pressed, eyes respond to the deforming cheek/surface
+    if (grabPress > 0.05) {
+      const contactX = p.contactX ?? 0;
+      const contactDist = p.contactDistance ?? 0;
+      if (contactDist < 28 || Math.abs(contactX) < 0.25) {
+        // Central squish: eye spacing compresses (~2-4px closer) as face sinks into marshmallow pocket
+        baseX *= 1 - grabPress * 0.07;
+      } else {
+        // Side squish: near eye shifts inward with compressed cheek, far eye moves less
+        const isNearSide = (contactX < 0 && isLeft) || (contactX > 0 && !isLeft);
+        if (isNearSide) {
+          baseX -= Math.sign(contactX) * grabPress * 4.2;
+        } else {
+          baseX -= Math.sign(contactX) * grabPress * 1.0;
+        }
+      }
+    }
+
     const projected = projectFeature(baseX, baseY, yawRad, pitchRad);
 
     // How square-on this eye now is, relative to facing the viewer.
@@ -352,7 +376,11 @@ function drawFace(ctx: CanvasRenderingContext2D, o: RenderOptions) {
     // into a bar: at full yaw it is still four fifths of its width and nearly
     // its full height, which stays clearly legible at 466.
     const eyeScaleX = clamp(0.82 + (prominence - 1) * 0.55, 0.82, 1.1);
-    const eyeScaleY = clamp(0.95 + (prominence - 1) * 0.18, 0.95, 1.06);
+    const grabEyeScaleY =
+      grabPress > 0.05 && ((p.contactDistance ?? 0) < 28 || Math.abs(p.contactX ?? 0) < 0.25)
+        ? 1 + grabPress * 0.04
+        : 1;
+    const eyeScaleY = clamp(0.95 + (prominence - 1) * 0.18, 0.95, 1.06) * grabEyeScaleY;
     const eyeOpenMod = clamp(0.92 + (prominence - 1) * 0.3, 0.9, 1.12);
     const eyeAlphaMod = clamp(0.84 + (prominence - 1) * 0.5, 0.84, 1);
     const browAngleMod = (isLeft ? 1 : -1) * yawSin * 4;

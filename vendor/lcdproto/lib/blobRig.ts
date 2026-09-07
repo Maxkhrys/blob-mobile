@@ -330,6 +330,8 @@ export interface ElementTransform {
   contactX: number;
   contactY: number;
   contactPressure: number;
+  /** Grab pressure: 0 to 1 soft tactile compression from touch. */
+  grabPressure?: number;
   /** Body-only surface ripple offsets, in 466-space pixels. */
   rippleTop: number;
   rippleUpper: number;
@@ -395,6 +397,7 @@ export const NEUTRAL_ELEMENT: ElementTransform = {
   contactX: 0,
   contactY: 0,
   contactPressure: 0,
+  grabPressure: 0,
   rippleTop: 0,
   rippleUpper: 0,
   rippleLower: 0,
@@ -423,3 +426,13 @@ export const NEUTRAL_RIG: BlobRig = {
   rightEye: { ...NEUTRAL_ELEMENT },
   mouth: { ...NEUTRAL_ELEMENT },
 };
+
+/**
+ * Normalises any angular degree value into the continuous principal range [-180, 180).
+ * Prevents full 360°/720° turns from clamping to extrema in clamped rendering layers.
+ */
+export function normalizeAngleDeg(deg: number): number {
+  let a = (deg + 180) % 360;
+  if (a < 0) a += 360;
+  return a - 180;
+}

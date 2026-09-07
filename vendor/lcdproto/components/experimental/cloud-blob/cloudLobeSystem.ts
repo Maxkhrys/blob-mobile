@@ -594,39 +594,148 @@ export function computeLobeTarget(
     }
   }
 
-  // Local radial contact. Pressure moves mass out of the normal and into
-  // the tangent, with a protected front cradle and broad shelf throughout.
-  const pressure = clamp(params.contactPressure ?? 0, 0, 1);
-  const angle = params.rotation * Math.PI / 180;
-  const cos = Math.cos(angle), sin = Math.sin(angle);
-  const wx = params.contactX ?? 0, wy = params.contactY ?? 0;
-  const nx = wx * cos + wy * sin, ny = wy * cos - wx * sin;
-  const projection = def.baseX * nx + def.baseY * ny;
-  const tangent = -def.baseX * ny + def.baseY * nx;
-  const facingWall = clamp(0.5 + projection / 140, 0, 1);
-  const resistance = isCore ? 0.18 : 1;
-  const compression = pressure * facingWall * 0.24 * resistance;
-  const expansion = pressure * (0.09 + facingWall * 0.09) * resistance;
-  tx -= nx * pressure * (8 + facingWall * 17) * resistance;
-  ty -= ny * pressure * (8 + facingWall * 17) * resistance;
-  tx -= ny * tangent * pressure * 0.10 * resistance;
-  ty += nx * tangent * pressure * 0.10 * resistance;
-  sx *= 1 - compression * nx * nx + expansion * ny * ny;
-  sy *= 1 - compression * ny * ny + expansion * nx * nx;
-  // Preserve projected lobe area without undoing intentional inflation.
+  // Local radial contact and grab squish. Pressure moves mass out of the normal and into
+  // the tangent, with a protected front cradle, contact-side local dent, and volume redistribution.
+  const wallPress = clamp(params.contactPressure ?? 0, 0, 1);
+  const grabPress = clamp(params.grabPressure ?? 0, -0.2, 1.4);
+  const pressure = clamp(Math.max(wallPress, grabPress * 0.92), 0, 1);
+
+  const angle = (params.rotation * Math.PI) / 180;
+  const cos = Math.cos(angle),
+    sin = Math.sin(angle);
+  const wx = params.contactX ?? 0,
+    wy = params.contactY ?? 0;
+  const nx = wx * cos + wy * sin,
+    ny = wy * cos - wx * sin;
+
+  const contactDist = params.contactDistance ?? 999;
+  const isCenterPress = grabPress > 0.05 && contactDist < 28;
+
+  // Core resistance: 0.38 for tactile grab (dense soft cloud rather than solid rock)
+  const grabResistance = isCore ? 0.38 : 1.0;
+  const resistance = wallPress > grabPress ? (isCore ? 0.22 : 1.0) : grabResistance;
+
+  let dentInfluence = 0;
+
+  if (isCenterPress) {
+    // Symmetrical central marshmallow pocket: finger/thumb presses into the center crown/core,
+    // crown depresses, core recesses, side cheeks puff outward, belly pushes down.
+    if (def.id === "topCrown") {
+      ty += 8 * grabPress * resistance;
+      sy *= 1 - 0.18 * grabPress * resistance;
+      sx *= 1 + 0.08 * grabPress * resistance;
+      dentInfluence = 0.85 * grabPress;
+    } else if (def.id === "core") {
+      ty += 3 * grabPress * resistance;
+      sy *= 1 - 0.20 * grabPress * resistance;
+      sx *= 1 - 0.08 * grabPress * resistance;
+      dentInfluence = 0.85 * grabPress;
+    } else if (def.id === "leftCheek") {
+      tx -= 15 * grabPress * resistance;
+      sx *= 1 + 0.16 * grabPress * resistance;
+      sy *= 1 + 0.08 * grabPress * resistance;
+    } else if (def.id === "rightCheek") {
+      tx += 15 * grabPress * resistance;
+      sx *= 1 + 0.16 * grabPress * resistance;
+      sy *= 1 + 0.08 * grabPress * resistance;
+    } else if (def.id === "bottomBelly") {
+      ty += 10 * grabPress * resistance;
+      sx *= 1 + 0.14 * grabPress * resistance;
+      sy *= 1 + 0.06 * grabPress * resistance;
+    } else if (def.id === "baseLeft") {
+      tx -= 9 * grabPress * resistance;
+      sx *= 1 + 0.10 * grabPress * resistance;
+    } else if (def.id === "baseRight") {
+      tx += 9 * grabPress * resistance;
+      sx *= 1 + 0.10 * grabPress * resistance;
+    }
+  } else if (grabPress > 0.05) {
+    // Directional off-center press (14-20px local contact dent, tangent puff):
+    const projection = def.baseX * nx + def.baseY * ny;
+    const tangent = -def.baseX * ny + def.baseY * nx;
+    const facingContact = clamp(0.5 + projection / 110, 0, 1);
+
+    // Contact-side lobe indentation gives visibly under finger pressure (14-20px local displacement).
+    // Only the touched side moves inward; the far side remains anchored or bulges outward.
+    const contactIndent = facingContact > 0.35 ? (facingContact - 0.35) / 0.65 : 0;
+    const localDisplacement = contactIndent * 18 * grabPress * resistance;
+
+    tx -= nx * localDisplacement;
+    ty -= ny * localDisplacement;
+
+    // Mass redistribution along tangent:
+    const tangentSign = tangent >= 0 ? 1 : -1;
+    const tangentPush = clamp(Math.abs(tangent) / 75, 0, 1) * 8 * grabPress * resistance;
+    tx += (-ny * tangentSign) * tangentPush;
+    ty += (nx * tangentSign) * tangentPush;
+
+    // Opposite side volume bulge:
+    if (facingContact < 0.35) {
+      const oppositeBulge = (0.35 - facingContact) / 0.35;
+      tx += nx * (oppositeBulge * 5 * grabPress * resistance);
+      ty += ny * (oppositeBulge * 5 * grabPress * resistance);
+    }
+
+    // Axis scaling: compression along contact normal, expansion along tangent
+    const compression = (0.12 + facingContact * 0.22) * grabPress * resistance;
+    const expansion = (0.10 + (1 - facingContact) * 0.12) * grabPress * resistance;
+
+    sx *= 1 - compression * nx * nx + expansion * ny * ny;
+    sy *= 1 - compression * ny * ny + expansion * nx * nx;
+
+    dentInfluence = facingContact > 0.5 ? clamp((facingContact - 0.5) * 2 * grabPress, 0, 1) : 0;
+  } else if (wallPress > 0.005) {
+    // Wall contact against circular AMOLED bezel (preserves baseline wall behavior)
+    const projection = def.baseX * nx + def.baseY * ny;
+    const tangent = -def.baseX * ny + def.baseY * nx;
+    const facingContact = clamp(0.5 + projection / 135, 0, 1);
+
+    const compression = wallPress * facingContact * 0.26 * (isCore ? 0.16 : 1);
+    const expansion = wallPress * (0.09 + (1 - facingContact) * 0.12) * (isCore ? 0.16 : 1);
+
+    const indentBase = 8 + facingContact * 18;
+    tx -= nx * wallPress * indentBase * (isCore ? 0.16 : 1);
+    ty -= ny * wallPress * indentBase * (isCore ? 0.16 : 1);
+    tx -= ny * tangent * wallPress * 0.11 * (isCore ? 0.16 : 1);
+    ty += nx * tangent * wallPress * 0.11 * (isCore ? 0.16 : 1);
+
+    sx *= 1 - compression * nx * nx + expansion * ny * ny;
+    sy *= 1 - compression * ny * ny + expansion * nx * nx;
+  }
+
+  // Preserve character-level volume without undoing intentional contact dent.
   const restArea = breathScale * breathScale * (1 + puff * 0.3) ** 2;
-  const areaCorrection = Math.sqrt(clamp(restArea / Math.max(0.1, sx * sy), 0.86, 1.18));
-  sx *= areaCorrection;
-  sy *= areaCorrection;
+  const areaCorrection = Math.sqrt(
+    clamp(restArea / Math.max(0.1, sx * sy), 0.86, 1.22)
+  );
+  // Pressed lobe is allowed to lose local projected area; volume preservation happens across the character
+  const localAreaCorrection = 1 + (areaCorrection - 1) * (1 - dentInfluence * 0.82);
+  sx *= localAreaCorrection;
+  sy *= localAreaCorrection;
+
   const shelf = def.depth < 0;
-  sx = clamp(sx, isCore ? 0.93 : shelf ? 0.90 : 0.84, 1.30);
-  sy = clamp(sy, isCore ? 0.93 : 0.82, shelf ? 1.16 : 1.24);
+  const isGrab = grabPress > 0.05;
+  const minScaleX = isCore
+    ? (isGrab ? 0.78 : 0.93)
+    : isGrab
+      ? (shelf ? 0.72 : 0.66)
+      : (shelf ? 0.90 : 0.84);
+  const minScaleY = isCore
+    ? (isGrab ? 0.78 : 0.93)
+    : isGrab
+      ? (shelf ? 0.72 : 0.66)
+      : 0.82;
+  sx = clamp(sx, minScaleX, 1.38);
+  sy = clamp(sy, minScaleY, 1.38);
 
   const rot = (lean * 0.38 * (1 - def.lagFactor * 0.45) * Math.PI) / 180;
 
   let opacity = def.baseOpacity * (1 - puff * 0.12);
   if (def.id === "frontVeil") {
-    opacity = def.baseOpacity * (params.faceEmbedDepth / 0.14);
+    opacity =
+      def.baseOpacity *
+      (params.faceEmbedDepth / 0.14) *
+      (1 - clamp(grabPress, 0, 1) * 0.55);
   }
 
   out.targetX = tx;
@@ -697,8 +806,8 @@ export function stepLobePhysics(
       state.vy += fy * h;
       state.y += state.vy * h;
     }
-    // Smooth relaxation
-    const rate = 1 - Math.exp(-12 * clampedDt);
+    // Smooth relaxation: rate constant 24 for swift tactile follow-through (<40ms)
+    const rate = 1 - Math.exp(-24 * clampedDt);
     state.scaleX += (targetScaleX - state.scaleX) * rate;
     state.scaleY += (targetScaleY - state.scaleY) * rate;
     state.opacity += (targetOpacity - state.opacity) * rate;

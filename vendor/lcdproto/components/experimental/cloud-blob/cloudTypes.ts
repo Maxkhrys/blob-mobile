@@ -75,6 +75,10 @@ export interface CloudDeformationParams {
   contactPressure?: number;
   contactX?: number;
   contactY?: number;
+  grabPressure?: number;
+  faceShiftX?: number;
+  faceShiftY?: number;
+  contactDistance?: number;
   shellYaw?: number;
   shellPitch?: number;
   turnYaw?: number; // -45 to 45 directional turning angle in degrees
