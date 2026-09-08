@@ -81,8 +81,37 @@ export interface CloudDeformationParams {
   contactDistance?: number;
   shellYaw?: number;
   shellPitch?: number;
-  turnYaw?: number; // -45 to 45 directional turning angle in degrees
-  turnPitch?: number; // -30 to 30 directional pitch angle in degrees
+  /** Legacy aliases. The orientation renderer reads facing/performance below. */
+  turnYaw?: number;
+  turnPitch?: number;
+  /** Mind-owned orientation, unwrapped when a performance crosses 180°. */
+  facingYaw?: number;
+  facingPitch?: number;
+  performanceYaw?: number;
+  performancePitch?: number;
+  performanceRoll?: number;
+  coreFacingYaw?: number;
+  coreFacingPitch?: number;
+  corePerformanceYaw?: number;
+  corePerformancePitch?: number;
+  corePerformanceRoll?: number;
+  shellFacingYaw?: number;
+  shellFacingPitch?: number;
+  shellPerformanceYaw?: number;
+  shellPerformancePitch?: number;
+  shellPerformanceRoll?: number;
+  crownFacingYaw?: number;
+  crownFacingPitch?: number;
+  crownPerformanceYaw?: number;
+  crownPerformancePitch?: number;
+  crownPerformanceRoll?: number;
+  massFacingYaw?: number;
+  massFacingPitch?: number;
+  massPerformanceYaw?: number;
+  massPerformancePitch?: number;
+  massPerformanceRoll?: number;
+  dragFaceYaw?: number;
+  dragFacePitch?: number;
 }
 
 export interface CloudMotionConfig {

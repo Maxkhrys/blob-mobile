@@ -530,6 +530,17 @@ export default function SettingsScreen() {
             <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
           </Pressable>
         </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open Character Motion Preview"
+          onPress={() => {
+            feedback("click");
+            router.push("/motion-preview");
+          }}
+          style={{ paddingTop: 10 }}
+        >
+          <Text style={styles.devCardSubtitle}>Character Motion Preview · experimental</Text>
+        </Pressable>
 
         {/* Collapsible advanced options */}
         <Pressable
