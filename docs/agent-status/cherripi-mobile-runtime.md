@@ -37,4 +37,4 @@ Experimental. Do not merge to main. PR targets `feat/mobile-cherri-latest-motion
     - Developer route remains `/motion-preview` (Cherri Brain Lab). TURN_LEFT / TURN_RIGHT / NEUTRAL call `setOrientationLab` as a developer facing scrub, not a second scheduler.
     - Visual/WebView/device parity unverified. Behavioural controller output matched the 7d26 source in the headless harness.
     - Studio UI, Next.js screens, and browser localStorage expression storage excluded on purpose.
-24. **final pushed SHA**: `23117afc4c4ec8b2f0546c69885c2693a0b9df33`
+24. **final pushed SHA**: implementation `23117afc4c4ec8b2f0546c69885c2693a0b9df33`; status record commit `a67fd8d822494aa30092d097d30285fa2d72d161`. Branch tip is the PR head.
