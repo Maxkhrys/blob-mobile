@@ -32,6 +32,8 @@ const bundle = `var LCD=(function(){var modules={${modules}},cache={};function l
   "lib/behaviours/controller.ts",
   "lib/behaviours/primitives.ts",
   "lib/mind/director.ts",
+  "lib/orientation.ts",
+  "lib/motionPreview.ts",
   "lib/mind/cloudFacing.ts",
   "lib/mind/eventSense.ts",
   "lib/mind/types.ts",

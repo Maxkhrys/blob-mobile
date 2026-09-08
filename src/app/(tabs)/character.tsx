@@ -517,6 +517,18 @@ export default function CharacterScreen() {
               <Ionicons name="terminal-outline" size={17} color="#FFFFFF" />
               <Text style={styles.devLabButtonText}>Open Advanced Dev Lab</Text>
             </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open Character Motion Preview"
+              onPress={() => {
+                feedback("click");
+                router.push("/motion-preview");
+              }}
+              style={styles.devLabButton}
+            >
+              <Ionicons name="body-outline" size={17} color="#FFFFFF" />
+              <Text style={styles.devLabButtonText}>Character Motion Preview</Text>
+            </Pressable>
           </GlassCard>
         </View>
       )}

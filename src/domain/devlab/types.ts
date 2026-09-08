@@ -100,6 +100,7 @@ export type DevLabRuntimeCommand =
   | { type: "center" }
   | { type: "clearTrails" }
   | { type: "triggerBehaviour"; id: string }
+  | { type: "triggerMotion"; id: string }
   | { type: "triggerPerformance"; id: string }
   | { type: "applyExpressionRecipe"; recipe: ExpressionRecipe }
   | { type: "clearExpressionRecipe" };

@@ -54,6 +54,10 @@ function RootNavigation() {
           options={{ headerShown: false, animation: "slide_from_right" }}
         />
         <Stack.Screen
+          name="motion-preview"
+          options={{ headerShown: false, animation: "slide_from_right" }}
+        />
+        <Stack.Screen
           name="simulator"
           options={{
             presentation: "modal",

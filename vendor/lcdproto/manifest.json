@@ -7,8 +7,8 @@
     "components/experimental/cloud-blob/cloudLobeSystem.ts": "f14fe3a13ce28425402ed0d867807566684af6cdc36349d3c47b0a047f7147fa",
     "components/experimental/cloud-blob/cloudMistTrails.ts": "f9382110b7656b7673ea5fefb9326312a2d15a0d0a721646fc337f7ae72c17a1",
     "components/experimental/cloud-blob/cloudPerformance.ts": "bdffd5c07894e27ad82f951b00f84e19e831d9b6711b2c0c08ca325f05d5ef52",
-    "components/experimental/cloud-blob/cloudRenderer.ts": "cbe39d903b604a5e051ff89975d861ab156eea8efa9565d59c5487fcb23176f9",
-    "components/experimental/cloud-blob/cloudTypes.ts": "4077e066160826f9aff0b7d4028073305bdc81ad6773950ca40d120c4725307c",
+    "components/experimental/cloud-blob/cloudRenderer.ts": "67be56e5b0cd255785fc593c671c254049b49d48f869c218d5cb3657808538ab",
+    "components/experimental/cloud-blob/cloudTypes.ts": "d7cd2822669e4f0f48644fffd0e804147ae38c2c4bc93a5ff8f0fee1ca422e44",
     "components/states/EnvironmentLayer.tsx": "980264b0d027e4256c274d0e58eb10b855684395686a00a4f9b72c69d0179be4",
     "lib/behaviours/controller.ts": "b4f41ba0866592d2187a3421724cdffcccb5c19cfbc9d7f658304630e7d98c79",
     "lib/behaviours/index.ts": "4fe41071ea3239711ac70f02f14a6a9b8c46fda48bb74ac61893b03aa0be5403",
@@ -43,7 +43,7 @@
     "lib/mind/catalogue/sleepy.ts": "aed322f4fa4ca5de976db647e3af19ea096a2ad866240c069825436925a8936e",
     "lib/mind/catalogue/surprised.ts": "b37527cc2de8235d9972af99e65ab0134d4ad8662870c833037f862642d48a1d",
     "lib/mind/catalogue/v3.ts": "40cfa8fba7e3aa0c1fdf25c549eded3bc7f3bff8319f0d7bddb9d9c21381b846",
-    "lib/mind/cloudFacing.ts": "daa96dfe55170d271983b951225b5cd9813c2a512a89a522ee1412ffaa1b9c39",
+    "lib/mind/cloudFacing.ts": "c197237b2ed316cd29f0d8b5d1c28cd99a3e30644e3571bb699d40b0c7693d42",
     "lib/mind/commands.ts": "b36ecddf5f6dfa1f6137c0c8888a496f143790873abf07d54d0acc145e5135ac",
     "lib/mind/director.ts": "20bf519892e1664fb1632341a0540d38bfdf6dc44ee9b09c9baaaf29832eadd6",
     "lib/mind/emotion.ts": "bf807d277ee7fde7d9a5064641030aa52ae02c14d70ad36348b81ec1e4c492a1",
@@ -64,6 +64,19 @@
     "lib/performances/performanceRunner.ts": "f789324b6f3421433d86682f996f6072f1233b89676361512e855b2eeb6e7489",
     "lib/performances/types.ts": "b483a26d783c7450aa61b226243acfaf2cccb98c582c729dddc05e3a87f74224",
     "lib/screenCatalogue.ts": "c7007516c0ce83124f954cef5ab3740ca64d3554f8ec97251d6c22e8a60bbc99",
-    "lib/stateEmotionMap.ts": "dc28c155df818a7d0bb54e345e1b5c86f4b10872a125c48fd8134786e0704c16"
+    "lib/stateEmotionMap.ts": "dc28c155df818a7d0bb54e345e1b5c86f4b10872a125c48fd8134786e0704c16",
+    "lib/orientation.ts": "6c620abd56b7db60e09aed99d6342d5b7547cc676bdcc79f0007dd972c2e4e90",
+    "lib/motionPreview.ts": "888c54867045a503de5a86f5dedb19ae5fcf5c038198fc88a971ac449b8ba91b"
+  },
+  "orientationSubset": {
+    "repository": "Maxkhrys/LCDPROTO",
+    "branch": "feat/grok-terra-orientation-synthesis-v1",
+    "sha": "7d26f8ba6b8709d38b071115a025ba0dfeaefbee",
+    "files": [
+      "lib/orientation.ts",
+      "lib/mind/cloudFacing.ts",
+      "components/experimental/cloud-blob/cloudRenderer.ts"
+    ],
+    "note": "Subset vendored for motion preview. The rest of vendor/lcdproto remains the mind-v4 snapshot."
   }
 }

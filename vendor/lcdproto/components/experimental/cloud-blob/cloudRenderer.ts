@@ -12,6 +12,13 @@ import type {
 } from "./cloudTypes";
 import { faceAnchor, type BlobColour, type BlobRig } from "@/lib/blobRig";
 import {
+  composeOrientation,
+  normalizeVec3,
+  rotateVec3,
+  type Mat3,
+  type Vec3,
+} from "@/lib/orientation";
+import {
   eyeGeometry,
   drawEyebrow,
   drawProceduralEye,
@@ -44,6 +51,12 @@ export interface RenderOptions {
   showContactShadow?: boolean;
 }
 const TAU = Math.PI * 2;
+
+function noteDataset(ctx: CanvasRenderingContext2D, key: string, value: string) {
+  const canvas = (ctx as CanvasRenderingContext2D & { canvas?: HTMLCanvasElement }).canvas;
+  if (!canvas || !canvas.dataset) return;
+  canvas.dataset[key] = value;
+}
 /** 466-space distance between authored depth tiers, for the 2.5D rotation. */
 const DEPTH_UNIT = 34;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -58,6 +71,21 @@ export function parseHexColor(hex: string) {
       : clean;
   const value = /^[\da-f]{6}$/i.test(full) ? parseInt(full, 16) : 0xd8e6ff;
   return { r: value >> 16, g: (value >> 8) & 255, b: value & 255 };
+}
+
+export function mixHexColor(
+  hex: string,
+  r: number,
+  g: number,
+  b: number,
+  amount: number
+): string {
+  const c = parseHexColor(hex);
+  const t = Math.max(0, Math.min(1, amount));
+  const nr = Math.round(c.r + (r - c.r) * t);
+  const ng = Math.round(c.g + (g - c.g) * t);
+  const nb = Math.round(c.b + (b - c.b) * t);
+  return `#${nr.toString(16).padStart(2, "0")}${ng.toString(16).padStart(2, "0")}${nb.toString(16).padStart(2, "0")}`;
 }
 const rgba = (c: ReturnType<typeof parseHexColor>, a: number) =>
   `rgba(${c.r},${c.g},${c.b},${a})`;
@@ -266,150 +294,243 @@ function stamp(
   ctx.restore();
 }
 
-/**
- * Projects a face feature onto the front of a rounded volume.
- *
- * The face is not one flat layer that gets squashed: each anchor sits at its
- * own angle on a sphere of radius FACE_RADIUS, and yaw rotates that angle.
- * Spacing compression, the near/far relationship and how far the whole group
- * travels all fall out of the projection rather than being faked with scaleX.
- *
- * Returns the projected offset plus `facing`, which is 1 when the feature
- * points straight at the viewer and falls off as it curves away.
- */
-const FACE_RADIUS = 96;
+/** Ellipsoid used as the face-bearing surface of the central cloud mass. */
+const FACE_RADIUS_X = 92;
+const FACE_RADIUS_Y = 78;
+const FACE_RADIUS_Z = 82;
 
-function projectFeature(ox: number, oy: number, yawRad: number, pitchRad: number) {
-  const theta = Math.asin(clamp(ox / FACE_RADIUS, -1, 1));
-  const turned = theta + yawRad;
-  const x = FACE_RADIUS * Math.sin(turned);
-  const facing = Math.cos(turned);
-
-  const phi = Math.asin(clamp(oy / FACE_RADIUS, -1, 1));
-  const turnedY = phi + pitchRad;
-  const y = FACE_RADIUS * Math.sin(turnedY);
-
-  return { x, y, facing: clamp(facing, -1, 1) };
+interface ProjectedLobePose {
+  x: number;
+  y: number;
+  rx: number;
+  ry: number;
+  opacity: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+  z: number;
+  zNorm: number;
 }
 
-function drawFace(ctx: CanvasRenderingContext2D, o: RenderOptions) {
+interface CurvedFaceAnchor {
+  point: Vec3;
+  normal: Vec3;
+  tangentX: Vec3;
+  tangentY: Vec3;
+}
+
+const smoothstep = (edge0: number, edge1: number, value: number) => {
+  const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
+interface OrientedFrame {
+  matrix: Mat3;
+  projectedXAxis: number;
+  projectedYAxis: number;
+  projectedZAxis: number;
+  surfaceRotation: number;
+}
+
+function makeOrientedFrame(
+  facing: { yaw: number; pitch: number },
+  performance: { yaw: number; pitch: number; roll: number },
+): OrientedFrame {
+  const matrix = composeOrientation(facing, performance);
+  const localXAxis = rotateVec3(matrix, { x: 1, y: 0, z: 0 });
+  const localYAxis = rotateVec3(matrix, { x: 0, y: 1, z: 0 });
+  const localZAxis = rotateVec3(matrix, { x: 0, y: 0, z: 1 });
+  return {
+    matrix,
+    projectedXAxis: Math.hypot(localXAxis.x, localXAxis.y),
+    projectedYAxis: Math.hypot(localYAxis.x, localYAxis.y),
+    projectedZAxis: Math.hypot(localZAxis.x, localZAxis.y),
+    surfaceRotation: Math.atan2(localXAxis.y, localXAxis.x),
+  };
+}
+
+function facingOf(
+  p: CloudDeformationParams,
+  layer: "face" | "core" | "shell" | "crown" | "mass",
+): { yaw: number; pitch: number } {
+  if (layer === "core" && p.coreFacingYaw != null) {
+    return { yaw: p.coreFacingYaw, pitch: p.coreFacingPitch ?? 0 };
+  }
+  if (layer === "shell" && p.shellFacingYaw != null) {
+    return { yaw: p.shellFacingYaw, pitch: p.shellFacingPitch ?? 0 };
+  }
+  if (layer === "crown" && p.crownFacingYaw != null) {
+    return { yaw: p.crownFacingYaw, pitch: p.crownFacingPitch ?? 0 };
+  }
+  if (layer === "mass" && p.massFacingYaw != null) {
+    return { yaw: p.massFacingYaw, pitch: p.massFacingPitch ?? 0 };
+  }
+  return { yaw: p.facingYaw ?? 0, pitch: p.facingPitch ?? 0 };
+}
+
+function performanceOf(
+  p: CloudDeformationParams,
+  layer: "face" | "core" | "shell" | "crown" | "mass",
+): { yaw: number; pitch: number; roll: number } {
+  if (layer === "core" && p.corePerformanceYaw != null) {
+    return {
+      yaw: p.corePerformanceYaw,
+      pitch: p.corePerformancePitch ?? 0,
+      roll: p.corePerformanceRoll ?? 0,
+    };
+  }
+  if (layer === "shell" && p.shellPerformanceYaw != null) {
+    return {
+      yaw: p.shellPerformanceYaw,
+      pitch: p.shellPerformancePitch ?? 0,
+      roll: p.shellPerformanceRoll ?? 0,
+    };
+  }
+  if (layer === "crown" && p.crownPerformanceYaw != null) {
+    return {
+      yaw: p.crownPerformanceYaw,
+      pitch: p.crownPerformancePitch ?? 0,
+      roll: p.crownPerformanceRoll ?? 0,
+    };
+  }
+  if (layer === "mass" && p.massPerformanceYaw != null) {
+    return {
+      yaw: p.massPerformanceYaw,
+      pitch: p.massPerformancePitch ?? 0,
+      roll: p.massPerformanceRoll ?? 0,
+    };
+  }
+  return {
+    yaw: p.performanceYaw ?? 0,
+    pitch: p.performancePitch ?? 0,
+    roll: p.performanceRoll ?? 0,
+  };
+}
+
+function layerForLobe(id: string): "core" | "shell" | "crown" | "mass" {
+  if (id === "bottomBelly" || id === "baseLeft" || id === "baseRight") return "mass";
+  if (id === "topCrown") return "crown";
+  if (id === "leftCheek" || id === "rightCheek") return "shell";
+  return "core";
+}
+
+/**
+ * Builds one authored face anchor on the front half of an ellipsoid. The
+ * normal and local tangents are rotated with the point, so every feature gets
+ * real near/far depth, screen-space width and back-side occlusion from the
+ * same matrix as the cloud lobes.
+ */
+function curvedFaceAnchor(x: number, y: number): CurvedFaceAnchor {
+  const footprint = clamp(
+    1 - (x * x) / (FACE_RADIUS_X * FACE_RADIUS_X) - (y * y) / (FACE_RADIUS_Y * FACE_RADIUS_Y),
+    0,
+    1,
+  );
+  const z = Math.max(1, FACE_RADIUS_Z * Math.sqrt(footprint));
+  const normal = normalizeVec3({
+    x: x / (FACE_RADIUS_X * FACE_RADIUS_X),
+    y: y / (FACE_RADIUS_Y * FACE_RADIUS_Y),
+    z: z / (FACE_RADIUS_Z * FACE_RADIUS_Z),
+  });
+  return {
+    point: { x, y, z },
+    normal,
+    tangentX: normalizeVec3({
+      x: 1,
+      y: 0,
+      z: -(x * FACE_RADIUS_Z * FACE_RADIUS_Z) / (z * FACE_RADIUS_X * FACE_RADIUS_X),
+    }),
+    tangentY: normalizeVec3({
+      x: 0,
+      y: 1,
+      z: -(y * FACE_RADIUS_Z * FACE_RADIUS_Z) / (z * FACE_RADIUS_Y * FACE_RADIUS_Y),
+    }),
+  };
+}
+
+function projectFaceAnchor(matrix: Mat3, anchor: CurvedFaceAnchor) {
+  const point = rotateVec3(matrix, anchor.point);
+  const normal = rotateVec3(matrix, anchor.normal);
+  const tangentX = rotateVec3(matrix, anchor.tangentX);
+  const tangentY = rotateVec3(matrix, anchor.tangentY);
+  return {
+    point,
+    normal,
+    tangentX,
+    tangentY,
+    /** No readability floor: the back side actually disappears. */
+    visibility: smoothstep(-0.12, 0.14, normal.z),
+    width: Math.hypot(tangentX.x, tangentX.y),
+    height: Math.hypot(tangentY.x, tangentY.y),
+  };
+}
+
+function drawFace(
+  ctx: CanvasRenderingContext2D,
+  o: RenderOptions,
+  matrix: Mat3,
+  core: ProjectedLobePose,
+) {
   const { size, rig, colourName, params: p } = o;
-  const core = o.lobeStates.core;
   const face = o.face ?? { offsetX: 0, offsetY: 0, scale: 1 };
   const faceScale = face.scale ?? 1;
-
-  // Dynamic turning yaw & pitch from combined rig and motion heading
-  const yaw = clamp(p.turnYaw ?? (rig.blob.yaw ?? 0), -45, 45);
-  const pitch = clamp(p.turnPitch ?? (rig.blob.pitch ?? 0), -30, 30);
-  const yawRad = (yaw * Math.PI) / 180;
-  const pitchRad = (pitch * Math.PI) / 180;
-  const yawSin = Math.sin(yawRad);
-  const pitchSin = Math.sin(pitchRad);
-
-  // The face group rides around the surface of the core.
-  const faceTurnX = -yawSin * 20;
-  const faceTurnY = -pitchSin * 25 - Math.abs(yawSin) * 3;
-
-  // The group as a whole is only lightly foreshortened. Perspective is carried
-  // by the per-feature projection below; crushing the whole plane on top of it
-  // is what used to turn the eyes into slits.
-  const faceYawWidth = clamp(0.82 + Math.cos(yawRad) * 0.18, 0.72, 1);
-  const facePitchHeight = clamp(0.88 + Math.abs(Math.cos(pitchRad)) * 0.12, 0.86, 1);
-
-  // Smooth profile fade only at extreme angles.
-  const profileAmount = Math.max(0, Math.abs(yawSin) - 0.78);
-  const faceVisibility = clamp(1 - profileAmount * 2.0, 0.35, 1);
-
-  const faceShiftX = p.faceShiftX ?? 0;
-  const faceShiftY = p.faceShiftY ?? 0;
   const grabPress = p.grabPressure ?? 0;
-
-  ctx.save();
-  ctx.translate(
-    core.x + (face.offsetX ?? 0) + faceTurnX + faceShiftX,
-    core.y + (face.offsetY ?? 0) + faceTurnY + faceShiftY
-  );
-  ctx.rotate(core.rotation * 0.65 + yawSin * 0.08);
-  ctx.scale(
-    clamp(1 + (core.scaleX - 1) * 0.3, 0.96, 1.06) * faceScale * faceYawWidth,
-    clamp(1 + (core.scaleY - 1) * 0.3, 0.96, 1.06) * faceScale * facePitchHeight
-  );
-  ctx.globalAlpha *= faceVisibility;
+  const faceAttachX = clamp(p.faceShiftX ?? 0, -12, 12);
+  const faceAttachY = clamp(p.faceShiftY ?? 0, -12, 12);
 
   for (const id of ["leftEye", "rightEye"] as const) {
-    const a = faceAnchor(id, size, colourName),
-      t = { ...rig[id] };
+    const a = faceAnchor(id, size, colourName);
+    const t = { ...rig[id] };
     const isLeft = id === "leftEye";
+    let localX = (a.x - size / 2 + (face.offsetX ?? 0) + faceAttachX + t.x) * faceScale;
+    const localY = (a.y - size / 2 + (face.offsetY ?? 0) + faceAttachY + t.y) * faceScale;
 
-    // Where this eye ends up once the face plane has turned. Everything about
-    // the eye's position and prominence comes from this one projection.
-    let baseX = a.x - size / 2;
-    const baseY = a.y - size / 2;
-
-    // Physical surface reaction:
-    // When pressed, eyes respond to the deforming cheek/surface
+    // Contact changes authored local anchor positions before orientation. It
+    // never changes yaw, which remains Mind-owned.
     if (grabPress > 0.05) {
       const contactX = p.contactX ?? 0;
       const contactDist = p.contactDistance ?? 0;
       if (contactDist < 28 || Math.abs(contactX) < 0.25) {
-        // Central squish: eye spacing compresses (~2-4px closer) as face sinks into marshmallow pocket
-        baseX *= 1 - grabPress * 0.07;
+        localX *= 1 - grabPress * 0.07;
       } else {
-        // Side squish: near eye shifts inward with compressed cheek, far eye moves less
         const isNearSide = (contactX < 0 && isLeft) || (contactX > 0 && !isLeft);
-        if (isNearSide) {
-          baseX -= Math.sign(contactX) * grabPress * 4.2;
-        } else {
-          baseX -= Math.sign(contactX) * grabPress * 1.0;
-        }
+        localX -= Math.sign(contactX) * grabPress * (isNearSide ? 4.2 : 1.0);
       }
     }
 
-    const projected = projectFeature(baseX, baseY, yawRad, pitchRad);
+    const projected = projectFaceAnchor(matrix, curvedFaceAnchor(localX, localY));
+    if (projected.visibility <= 0.012) continue;
 
-    // How square-on this eye now is, relative to facing the viewer.
-    const facing = clamp(projected.facing, 0.2, 1);
-    const restFacing = Math.cos(Math.asin(clamp(baseX / FACE_RADIUS, -1, 1)));
-    const prominence = clamp(facing / Math.max(restFacing, 0.2), 0.6, 1.25);
-
-    // Readability floors. The far eye narrows and dims, but it never collapses
-    // into a bar: at full yaw it is still four fifths of its width and nearly
-    // its full height, which stays clearly legible at 466.
-    const eyeScaleX = clamp(0.82 + (prominence - 1) * 0.55, 0.82, 1.1);
+    const depthScale = clamp(1 + projected.point.z / FACE_RADIUS_Z * 0.12, 0.78, 1.18);
+    const vis = projected.visibility;
+    // Visibility-aware, not a restored 0.82/0.95 floor. Front stays plump,
+    // 45–65° keeps the far eye from collapsing into a hairline, profile is
+    // allowed to recede, and back-face occlusion already culled us.
+    const slitGuard = smoothstep(0.16, 0.52, vis);
+    const frontHold = smoothstep(0.52, 0.9, vis);
+    const minW = 0.10 + 0.20 * slitGuard + 0.16 * frontHold;
+    const minH = 0.34 + 0.22 * vis;
+    const eyeScaleX = clamp(0.10 + projected.width * 0.90, minW, 1.14) * depthScale;
     const grabEyeScaleY =
       grabPress > 0.05 && ((p.contactDistance ?? 0) < 28 || Math.abs(p.contactX ?? 0) < 0.25)
         ? 1 + grabPress * 0.04
         : 1;
-    const eyeScaleY = clamp(0.95 + (prominence - 1) * 0.18, 0.95, 1.06) * grabEyeScaleY;
-    const eyeOpenMod = clamp(0.92 + (prominence - 1) * 0.3, 0.9, 1.12);
-    const eyeAlphaMod = clamp(0.84 + (prominence - 1) * 0.5, 0.84, 1);
-    const browAngleMod = (isLeft ? 1 : -1) * yawSin * 4;
-
-    t.eyeOpen *= eyeOpenMod;
-
+    const eyeScaleY = clamp(0.34 + projected.height * 0.66, minH, 1.16) * depthScale * grabEyeScaleY;
+    t.eyeOpen *= clamp(0.72 + projected.height * 0.34, 0.58, 1.08);
     const eye = eyeGeometry(a.width * eyeScaleX, a.height * eyeScaleY, t, false);
-
-    // Directional gaze. This is the loudest part of the turn on purpose: the
-    // pupil mass travels up to a third of the aperture, which reads instantly
-    // at native size, and still leaves the black inside the lid band.
     const gazeTravelX = eye.width * 0.33;
     const gazeTravelY = eye.height * 0.16;
-    eye.centerX = clamp(
-      eye.centerX + p.gazeX * gazeTravelX,
-      -gazeTravelX,
-      gazeTravelX
-    );
-    eye.centerY = clamp(
-      eye.centerY + p.gazeY * gazeTravelY,
-      -gazeTravelY,
-      gazeTravelY
-    );
+    eye.centerX = clamp(eye.centerX + p.gazeX * gazeTravelX, -gazeTravelX, gazeTravelX);
+    eye.centerY = clamp(eye.centerY + p.gazeY * gazeTravelY, -gazeTravelY, gazeTravelY);
 
     ctx.save();
-    ctx.translate(projected.x + t.socketX, projected.y + t.socketY);
-    ctx.globalAlpha *= t.opacity * eyeAlphaMod;
+    ctx.translate(core.x + projected.point.x + t.socketX, core.y + projected.point.y + t.socketY);
+    // The feature artwork follows its rotated surface basis. A cartwheel thus
+    // turns the actual face anchors/artwork with the volume, without rotating
+    // the finished canvas image.
+    ctx.rotate(Math.atan2(projected.tangentX.y, projected.tangentX.x));
+    ctx.globalAlpha *= t.opacity * projected.visibility * clamp(0.72 + depthScale * 0.28, 0.72, 1.05);
 
-    // Optional mist accent behind brows
     if (p.cloudBrows) {
       ctx.save();
       ctx.globalAlpha *= 0.18;
@@ -420,15 +541,13 @@ function drawFace(ctx: CanvasRenderingContext2D, o: RenderOptions) {
       ctx.restore();
     }
 
-    // The brow is drawn in the eye's own projected space, so it travels with
-    // its socket around the curve without any separate bookkeeping.
     ctx.save();
     ctx.globalAlpha *= 0.88;
     drawEyebrow(
       ctx,
       eye,
       t.browLift,
-      t.browRotation + browAngleMod,
+      t.browRotation + Math.atan2(projected.tangentX.y, projected.tangentX.x) * 0.06,
       size * BROW_CLEARANCE_RATIO,
     );
     ctx.restore();
@@ -446,34 +565,33 @@ function drawFace(ctx: CanvasRenderingContext2D, o: RenderOptions) {
     ctx.restore();
   }
 
-  // The mouth rides the same curved surface, and leans a little further into
-  // the turn than the eyes so the whole head reads as pointing that way.
-  const a = faceAnchor("mouth", size, colourName),
-    t = rig.mouth;
-  const mouthProjected = projectFeature(
-    a.x - size / 2,
-    a.y - size / 2,
-    yawRad,
-    pitchRad
+  const a = faceAnchor("mouth", size, colourName);
+  const t = rig.mouth;
+  const mouth = projectFaceAnchor(
+    matrix,
+    curvedFaceAnchor(
+      (a.x - size / 2 + (face.offsetX ?? 0) + faceAttachX + t.x) * faceScale,
+      (a.y - size / 2 + (face.offsetY ?? 0) + faceAttachY + t.y) * faceScale,
+    ),
   );
-  const mouthPerspX = clamp(0.86 + Math.cos(yawRad) * 0.14, 0.82, 1);
+  if (mouth.visibility <= 0.012) return;
+  const mouthDepth = clamp(1 + mouth.point.z / FACE_RADIUS_Z * 0.1, 0.8, 1.16);
   ctx.save();
-  ctx.translate(
-    mouthProjected.x + t.x + yawSin * 5,
-    mouthProjected.y + t.y
-  );
-  ctx.globalAlpha *= t.opacity;
+  ctx.translate(core.x + mouth.point.x, core.y + mouth.point.y);
+  ctx.rotate(Math.atan2(mouth.tangentX.y, mouth.tangentX.x));
+  ctx.globalAlpha *= t.opacity * mouth.visibility * clamp(0.74 + mouthDepth * 0.26, 0.74, 1.04);
+  noteDataset(ctx, "mouthTongue", String(t.mouthTongue ?? 0));
   drawMouthShape(
     ctx,
-    a.width * 0.95 * clamp(t.scaleX * mouthPerspX, 0.55, 1.18),
-    a.height * 1.08 * clamp(t.scaleY, 0.7, 1.24),
+    a.width * 1.18 * clamp(t.scaleX * (0.14 + mouth.width * 0.86) * mouthDepth, 0.12, 1.38),
+    a.height * 1.28 * clamp(t.scaleY * (0.56 + mouth.height * 0.44) * mouthDepth, 0.45, 1.42),
     clamp(t.mouthCurve, -1, 1),
     t.mouthO,
     t.mouthD,
     t.mouthCrescent ?? 0,
-    colourName
+    colourName,
+    t.mouthTongue ?? 0,
   );
-  ctx.restore();
   ctx.restore();
 }
 
@@ -481,8 +599,10 @@ export function renderCloudBlob(
   ctx: CanvasRenderingContext2D,
   o: RenderOptions,
 ): void {
+  const renderStart = typeof performance !== "undefined" && performance.now ? performance.now() : 0;
   const { size, renderScale, params: p, lobeStates, colour, idleTime: t } = o;
   const s = getStamps(ctx, colour, p);
+  noteDataset(ctx, "stampBuilds", String(s.builds));
   ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
   ctx.clearRect(0, 0, size, size);
   ctx.save();
@@ -520,43 +640,57 @@ export function renderCloudBlob(
     }
   }
 
+  // One orientation contract for all authored cloud geometry. Every lobe starts
+  // from immutable baseX/baseY/depth, adds its local acting offsets, then its
+  // delayed matrix rotates the result. Face uses the immediate acted turn so
+  // eyes lead. There is no velocity heading or clamp here.
+  const facing = facingOf(p, "face");
+  const performanceOrientation = performanceOf(p, "face");
+  const faceFrame = makeOrientedFrame(
+    {
+      yaw: facing.yaw + (p.dragFaceYaw ?? 0),
+      pitch: facing.pitch + (p.dragFacePitch ?? 0),
+    },
+    performanceOrientation,
+  );
+  const coreFrame = makeOrientedFrame(facingOf(p, "core"), performanceOf(p, "core"));
+  const shellFrame = makeOrientedFrame(facingOf(p, "shell"), performanceOf(p, "shell"));
+  const crownFrame = makeOrientedFrame(facingOf(p, "crown"), performanceOf(p, "crown"));
+  const massFrame = makeOrientedFrame(facingOf(p, "mass"), performanceOf(p, "mass"));
+  const finalMatrix = coreFrame.matrix;
+  const faceMatrix = faceFrame.matrix;
+  const frames = {
+    core: coreFrame,
+    shell: shellFrame,
+    crown: crownFrame,
+    mass: massFrame,
+  } as const;
+
   // Contact shadow on the floor (only rendered if explicitly requested, as EnvironmentLayer handles the official grounded shadow)
   if (o.showContactShadow) {
     const altitude = Math.max(0, -p.y);
     const shadowFade = clamp(1 - altitude / 130, 0, 1);
     if (shadowFade > 0.01) {
+      const underside = rotateVec3(massFrame.matrix, { x: 0, y: 86, z: -68 });
+      const down = rotateVec3(massFrame.matrix, { x: 0, y: 1, z: 0 });
+      const grounded = clamp(down.y, 0, 1);
       const height = clamp(1 - p.y / 160, 0.45, 1.35);
       stamp(
         ctx,
         s.shadow,
-        size / 2 + p.x * 0.4,
+        size / 2 + p.x * 0.4 + underside.x * 0.38 * p.scale,
         size / 2 + 130 * p.scale + Math.max(0, p.y) * 0.4,
-        95 * p.scale * height,
+        95 * p.scale * height * (0.58 + 0.42 * grounded),
         13 * p.scale,
-        (0.22 / height) * shadowFade,
+        (0.22 / height) * shadowFade * (0.4 + 0.6 * grounded),
       );
     }
   }
 
-  const yaw = clamp(p.shellYaw ?? p.turnYaw ?? (o.rig.blob.yaw ?? 0), -45, 45);
-  const pitch = clamp(p.shellPitch ?? p.turnPitch ?? (o.rig.blob.pitch ?? 0), -30, 30);
-  const yawRad = (yaw * Math.PI) / 180;
-  const pitchRad = (pitch * Math.PI) / 180;
-  const yawSin = Math.sin(yawRad);
-  const yawCos = Math.cos(yawRad);
-  const pitchSin = Math.sin(pitchRad);
-  const pitchCos = Math.cos(pitchRad);
-
-  // 3D Horizontal body foreshortening:
-  // Kept subtle (0.94-1.0) so the cloud stays volumetric and never squashes into a flat paper cutout.
-  // 3D depth illusion is generated by internal 2.5D lobe rotation, face dome curve, and cheek volume swells.
-  const bodyYawWidth = clamp(0.94 + Math.abs(yawCos) * 0.06, 0.94, 1);
-  const bodyPitchHeight = clamp(0.96 + Math.abs(pitchCos) * 0.04, 0.96, 1);
-
   ctx.save();
   ctx.translate(size / 2 + p.x, size / 2 + p.y);
   ctx.rotate((p.rotation * Math.PI) / 180);
-  ctx.scale(p.scale * p.scaleX * bodyYawWidth, p.scale * p.scaleY * bodyPitchHeight);
+  ctx.scale(p.scale * p.scaleX, p.scale * p.scaleY);
   ctx.rotate(o.wallAngle);
   ctx.scale(o.wallScaleX, o.wallScaleY);
   ctx.rotate(-o.wallAngle);
@@ -569,110 +703,65 @@ export function renderCloudBlob(
   const worldRotRad = (p.rotation * Math.PI) / 180;
   const lightFollowRotation = -worldRotRad * 0.65 + lightParallaxX;
 
-  // Lobe 3D pose calculator with depth parallax & cohesive pull lag
-  const getLobePose = (def: (typeof LOBE_DEFINITIONS)[number]) => {
+  // Lobe 3D pose calculator. Local deformation is resolved by the lobe system
+  // first; orientation is a stateless projection of that authored local pose.
+  // Eyes use the immediate face matrix; core/shell/mass trail it.
+  const getLobePose = (
+    def: (typeof LOBE_DEFINITIONS)[number],
+    localOffset: Partial<Vec3> = {},
+  ): ProjectedLobePose => {
+    const frame = frames[layerForLobe(def.id)];
     const l = lobeStates[def.id] ?? { x: def.baseX, y: def.baseY, scaleX: 1, scaleY: 1, opacity: 1, rotation: 0 };
-    const depth = def.depth ?? 0;
-    // 3D Parallax offset: front lobes rotate with yaw, rear lobes shift opposite
-    const parallaxY = depth * pitchSin * 18 - (depth > 0 ? Math.abs(yawSin) * 5 : 0);
-
-
-    // 2.5D projection. Each lobe carries a cheap z taken from its authored
-    // depth tier, and yaw rotates the (x, z) pair about the body axis. That
-    // single rotation gives three things the old parallax offset could not:
-    // real horizontal foreshortening, a near/far scale that follows the
-    // rotated z rather than the authored one, and a projected z the draw order
-    // can sort on — so a cheek genuinely swings in front of or behind the core
-    // instead of staying pinned to its tier.
-    const bz = depth * DEPTH_UNIT;
-    const bx = def.baseX;
-    const rotatedX = bx * yawCos + bz * yawSin;
-    const rotatedZ = -bx * yawSin + bz * yawCos;
-    const projectionShift = rotatedX - bx;
-
-    const x = l.x + projectionShift;
-    const y = l.y + parallaxY;
-
-    // Near lobes read slightly larger and clearer, far ones slightly smaller
-    // and denser. Kept gentle: this is depth cueing, not a zoom.
-    const zNorm = clamp(rotatedZ / (DEPTH_UNIT * 2.4), -1, 1);
+    const local = {
+      x: def.baseX + (l.x - def.baseX) + (localOffset.x ?? 0),
+      y: def.baseY + (l.y - def.baseY) + (localOffset.y ?? 0),
+      z: (def.depth ?? 0) * DEPTH_UNIT + (localOffset.z ?? 0),
+    };
+    const rotated = rotateVec3(frame.matrix, local);
+    // Near/far scale and painter order are both based on this same rotated Z.
+    const zNorm = clamp(rotated.z / (DEPTH_UNIT * 3.1), -1, 1);
     const depthScale = clamp(1 + zNorm * 0.11, 0.86, 1.14);
-
     const softness = clamp(p.lobeSoftness, 0.75, 1.3);
-    const rx = def.radiusX * l.scaleX * softness * depthScale;
-    const ry = def.radiusY * l.scaleY * softness * depthScale;
+    const depthRadius = (def.radiusX + def.radiusY) * 0.42;
+    const rx = Math.max(
+      4,
+      Math.hypot(
+        def.radiusX * l.scaleX * frame.projectedXAxis,
+        depthRadius * l.scaleX * frame.projectedZAxis,
+      ) * softness * depthScale,
+    );
+    const ry = Math.max(
+      4,
+      Math.hypot(
+        def.radiusY * l.scaleY * frame.projectedYAxis,
+        depthRadius * l.scaleY * frame.projectedZAxis,
+      ) * softness * depthScale,
+    );
 
     return {
-      x,
-      y,
+      x: rotated.x,
+      y: rotated.y,
       rx,
       ry,
       opacity: l.opacity,
-      rotation: l.rotation,
+      rotation: l.rotation + frame.surfaceRotation,
       scaleX: l.scaleX,
       scaleY: l.scaleY,
-      depth,
-      z: rotatedZ,
+      z: rotated.z,
       zNorm,
     };
   };
 
-  /**
-   * Every shell lobe posed once, back to front on projected z. Six poses and
-   * one sort per frame — nothing next to the stamps they feed.
-   */
-  const shellLobes = LOBE_DEFINITIONS.filter(
-    (def) => def.id !== "frontVeil" && def.id !== "core"
-  )
+  /** Every mass — including the core — is sorted on its rotated Z each frame. */
+  const orderedLobes = LOBE_DEFINITIONS
     .map((def) => ({ def, pose: getLobePose(def) }))
     .sort((a, b) => a.pose.z - b.pose.z);
-
-  /** Membership is the projected z, so a lobe can change sides mid-turn. */
-  const orderedLobes = (predicate: (z: number) => boolean) =>
-    shellLobes.filter((entry) => predicate(entry.pose.z));
-
-  const coreDef = LOBE_DEFINITIONS.find((d) => d.id === "core")!;
-  const corePose = getLobePose(coreDef);
-  const bottomBellyDef = LOBE_DEFINITIONS.find((d) => d.id === "bottomBelly");
-  const bottomBellyPose = bottomBellyDef ? getLobePose(bottomBellyDef) : null;
-  const leftCheekDef = LOBE_DEFINITIONS.find((d) => d.id === "leftCheek");
-  const rightCheekDef = LOBE_DEFINITIONS.find((d) => d.id === "rightCheek");
-  const crownDef = LOBE_DEFINITIONS.find((d) => d.id === "topCrown");
-  const leftCheekPose = leftCheekDef ? getLobePose(leftCheekDef) : null;
-  const rightCheekPose = rightCheekDef ? getLobePose(rightCheekDef) : null;
-  const crownPose = crownDef ? getLobePose(crownDef) : null;
-
-  // 1. LOBES BEHIND THE CORE, back to front on projected z. Membership is no
-  // longer the authored tier: during a turn a cheek can cross into this group.
-  for (const { def, pose } of orderedLobes((z) => z < 0)) {
-    const l = lobeStates[def.id];
-    const subs = LOBE_SUB_PUFFS[def.id];
-    if (subs && p.fluffiness > 0.05) {
-      for (const sub of subs) {
-        const breathe = Math.sin(t * 1.1 + (sub.phaseOffset ?? 0)) * 0.7;
-        stamp(
-          ctx,
-          s.rearMass,
-          pose.x + sub.offsetX * p.fluffiness * l.scaleX,
-          pose.y + (sub.offsetY * p.fluffiness + breathe) * l.scaleY,
-          pose.rx * sub.radiusRatio,
-          pose.ry * sub.radiusRatio,
-          l.opacity * 0.85,
-          pose.rotation + lightFollowRotation,
-        );
-      }
-    }
-    stamp(
-      ctx,
-      s.rearMass,
-      pose.x,
-      pose.y,
-      pose.rx,
-      pose.ry,
-      Math.min(1, l.opacity * colour.density * 1.05 * (1 - pose.zNorm * 0.06)),
-      pose.rotation + lightFollowRotation,
-    );
-  }
+  const poseFor = (id: string) => orderedLobes.find((entry) => entry.def.id === id)?.pose ?? null;
+  const corePose = poseFor("core")!;
+  const bottomBellyPose = poseFor("bottomBelly");
+  const leftCheekPose = poseFor("leftCheek");
+  const rightCheekPose = poseFor("rightCheek");
+  const crownPose = poseFor("topCrown");
 
   // 2. CONNECTIVE CORE BRIDGE (fuses core and bottom belly/base lobes into one continuous solid volume)
   if (bottomBellyPose) {
@@ -696,17 +785,48 @@ export function renderCloudBlob(
     : corePose.y + 24;
   stamp(ctx, s.underside, corePose.x, trueBottomY, 116 * corePose.scaleX, 34 * corePose.scaleY, 0.38);
 
-  // 4. CENTRAL CLOUD CORE
-  stamp(
-    ctx,
-    s.core,
-    corePose.x,
-    corePose.y + 10,
-    126 * corePose.scaleX,
-    100 * corePose.scaleY,
-    clamp(p.coreDensity * colour.density, 0, 1),
-    lightFollowRotation,
-  );
+  // 4. ROTATED LOBE STACK. A sub-puff is another local authored offset and
+  // therefore passes through `getLobePose` too; it is never appended in screen
+  // coordinates after rotation.
+  for (const { def, pose } of orderedLobes) {
+    const l = lobeStates[def.id] ?? { opacity: 1, scaleX: 1, scaleY: 1 };
+    const isVeil = def.id === "frontVeil";
+    const isCore = def.id === "core";
+    const volume = isVeil ? s.mist : isCore ? s.core : pose.z < 0 ? s.rearMass : s.mass;
+    const subs = !isVeil ? LOBE_SUB_PUFFS[def.id] : undefined;
+    if (subs && p.fluffiness > 0.05) {
+      for (const sub of subs) {
+        const breathe = Math.sin(t * 1.1 + (sub.phaseOffset ?? 0)) * 0.7;
+        const subPose = getLobePose(def, {
+          x: sub.offsetX * p.fluffiness * l.scaleX,
+          y: (sub.offsetY * p.fluffiness + breathe) * l.scaleY,
+        });
+        stamp(
+          ctx,
+          pose.z < 0 ? s.rearMass : s.mass,
+          subPose.x,
+          subPose.y,
+          subPose.rx * sub.radiusRatio,
+          subPose.ry * sub.radiusRatio,
+          l.opacity * 0.84,
+          subPose.rotation + lightFollowRotation,
+        );
+      }
+    }
+    stamp(
+      ctx,
+      volume,
+      pose.x,
+      pose.y + (isCore ? 10 : 0),
+      isCore ? pose.rx * 1.22 : pose.rx,
+      isCore ? pose.ry * 1.18 : pose.ry,
+      Math.min(
+        1,
+        l.opacity * colour.density * (isVeil ? 0.52 : isCore ? p.coreDensity : 1.04) * (1 + pose.zNorm * 0.05),
+      ),
+      pose.rotation + lightFollowRotation,
+    );
+  }
   stamp(ctx, s.glow, corePose.x, corePose.y + 12, 80, 70, colour.glowIntensity * 0.16, lightFollowRotation);
 
   // 5. PROXIMITY-BASED BILLOW CREVICE SHADOWS (soft, only between closely overlapping lobes)
@@ -720,38 +840,7 @@ export function renderCloudBlob(
     stamp(ctx, s.crevice, crownPose.x * 0.5 + corePose.x * 0.5, crownPose.y * 0.5 + corePose.y * 0.5 + 8, 44, 30, 0.35);
   }
 
-  // 6. LOBES IN FRONT OF THE CORE, back to front on projected z.
-  for (const { def, pose } of orderedLobes((z) => z >= 0)) {
-    const l = lobeStates[def.id];
-    const subs = LOBE_SUB_PUFFS[def.id];
-    if (subs && p.fluffiness > 0.05) {
-      for (const sub of subs) {
-        const breathe = Math.sin(t * 1.1 + (sub.phaseOffset ?? 0)) * 0.7;
-        stamp(
-          ctx,
-          s.mass,
-          pose.x + sub.offsetX * p.fluffiness * l.scaleX,
-          pose.y + (sub.offsetY * p.fluffiness + breathe) * l.scaleY,
-          pose.rx * sub.radiusRatio,
-          pose.ry * sub.radiusRatio,
-          l.opacity * 0.88,
-          pose.rotation + lightFollowRotation,
-        );
-      }
-    }
-    stamp(
-      ctx,
-      s.mass,
-      pose.x,
-      pose.y,
-      pose.rx,
-      pose.ry,
-      Math.min(1, l.opacity * colour.density * 1.08 * (1 + pose.zNorm * 0.05)),
-      pose.rotation + lightFollowRotation,
-    );
-  }
-
-  // 7. TOP CREST & CHEEK RIM LIGHT ACCENTS - Disabled to ensure completely smooth, mark-free cloud surface
+  // 5. TOP CREST & CHEEK RIM LIGHT ACCENTS - Disabled to ensure completely smooth, mark-free cloud surface
 
   // 8. RESTRAINED INTERNAL LIFE MOTES (Gentle, slow breathing shimmer deep inside volume)
   for (const d of SUSPENDED_DROPLETS) {
@@ -759,10 +848,13 @@ export function renderCloudBlob(
     const shimmer = 0.5 + 0.5 * Math.sin(t * d.driftSpeed + d.driftPhase);
     if (shimmer < 0.05) continue;
     const dropDepth = d.radius > 2.0 ? 0.8 : -0.6;
-    const dropParallaxX = dropDepth * yawSin * 14;
-    const dropParallaxY = dropDepth * pitchSin * 10;
-    const x = corePose.x + d.x * 1.35 + dropParallaxX;
-    const y = corePose.y + d.y * 1.1 + dropParallaxY;
+    const drop = rotateVec3(finalMatrix, {
+      x: d.x * 1.35,
+      y: d.y * 1.1,
+      z: dropDepth * DEPTH_UNIT,
+    });
+    const x = corePose.x + drop.x;
+    const y = corePose.y + drop.y;
     // Soft ambient mist halo around the mote
     stamp(
       ctx,
@@ -785,33 +877,39 @@ export function renderCloudBlob(
 
   // 9. CHEEK BLUSH
   if (p.cheekBlush > 0 && leftCheekPose && rightCheekPose) {
+    const leftBlush = rotateVec3(finalMatrix, { x: 18, y: 16, z: 8 });
+    const rightBlush = rotateVec3(finalMatrix, { x: -18, y: 16, z: 8 });
     ctx.save();
     ctx.fillStyle = "#e8999f";
     ctx.globalAlpha *= p.cheekBlush * 0.15;
     ctx.beginPath();
-    ctx.ellipse(leftCheekPose.x + 18, leftCheekPose.y + 16, 17, 8, 0, 0, TAU);
-    ctx.ellipse(rightCheekPose.x - 18, rightCheekPose.y + 16, 17, 8, 0, 0, TAU);
+    ctx.ellipse(leftCheekPose.x + leftBlush.x, leftCheekPose.y + leftBlush.y, 17, 8, 0, 0, TAU);
+    ctx.ellipse(rightCheekPose.x + rightBlush.x, rightCheekPose.y + rightBlush.y, 17, 8, 0, 0, TAU);
     ctx.fill();
     ctx.restore();
   }
 
-  // 10. LOCAL FACIAL DEPTH EMBEDDING (Dense core bed beneath features)
-  stamp(ctx, s.core, corePose.x, corePose.y + 8, 96 * corePose.scaleX, 74 * corePose.scaleY, 0.42);
-  stamp(ctx, s.mist, corePose.x, corePose.y + 26, 88, 44, Math.max(0.08, p.faceEmbedDepth * 0.2));
-  // A slightly denser bed directly under the features so they sit in the
-  // volume rather than on it. Nothing is drawn over the black itself.
-  stamp(ctx, s.core, corePose.x, corePose.y - 4, 74 * corePose.scaleX, 54 * corePose.scaleY, 0.2 + p.faceEmbedDepth * 0.35);
+  // 10. LOCAL FACIAL DEPTH EMBEDDING. The front surface normal controls this
+  // bed too, so no face-shaped mist survives on the back of the volume.
+  const faceFront = smoothstep(-0.05, 0.22, rotateVec3(faceMatrix, { x: 0, y: 0, z: 1 }).z);
+  noteDataset(ctx, "faceFront", faceFront.toFixed(3));
+  if (faceFront > 0.01) {
+    stamp(ctx, s.core, corePose.x, corePose.y + 8, 96 * corePose.scaleX, 74 * corePose.scaleY, 0.42 * faceFront);
+    stamp(ctx, s.mist, corePose.x, corePose.y + 26, 88, 44, Math.max(0.08, p.faceEmbedDepth * 0.2) * faceFront);
+    stamp(ctx, s.core, corePose.x, corePose.y - 4, 74 * corePose.scaleX, 54 * corePose.scaleY, (0.2 + p.faceEmbedDepth * 0.35) * faceFront);
+  }
 
-  // 11. CRISP PRODUCTION FACE (3D Spherical placement, foreshortening, and differential eye scale)
-  if (o.showFace) drawFace(ctx, o);
+  // 11. CURVED PRODUCTION FACE. Anchors have their own depth and normal, but
+  // use the same FinalOrientation matrix as the lobe stack.
+  if (o.showFace && faceFront > 0.01) drawFace(ctx, o, faceMatrix, corePose);
   // Two very light veils across the outer face field: a wide one that ties the
   // whole feature group into the body, and a tighter one that softens the
   // material immediately around the features. Both stay far below the level
   // that would grey the black itself — they only stop the outline reading as
   // a decal laid over the volume.
-  if (o.showFace) {
-    stamp(ctx, s.mist, corePose.x, corePose.y + 2, 108 * corePose.scaleX, 76 * corePose.scaleY, 0.06 + p.faceEmbedDepth * 0.12);
-    stamp(ctx, s.mist, corePose.x, corePose.y + 10, 76 * corePose.scaleX, 50 * corePose.scaleY, 0.04 + p.faceEmbedDepth * 0.08);
+  if (o.showFace && faceFront > 0.01) {
+    stamp(ctx, s.mist, corePose.x, corePose.y + 2, 108 * corePose.scaleX, 76 * corePose.scaleY, (0.06 + p.faceEmbedDepth * 0.12) * faceFront);
+    stamp(ctx, s.mist, corePose.x, corePose.y + 10, 76 * corePose.scaleX, 50 * corePose.scaleY, (0.04 + p.faceEmbedDepth * 0.08) * faceFront);
   }
 
   if (o.debug) {
@@ -832,9 +930,42 @@ export function renderCloudBlob(
       );
       ctx.stroke();
       ctx.fillRect(pose.x - 1.5, pose.y - 1.5, 3, 3);
+      if (def.id !== "core" && def.id !== "frontVeil") {
+        ctx.strokeStyle = "rgba(240,187,101,0.45)";
+        ctx.beginPath();
+        ctx.moveTo(corePose.x, corePose.y);
+        ctx.lineTo(pose.x, pose.y);
+        ctx.stroke();
+        ctx.strokeStyle = "#f0bb65";
+      }
     }
     ctx.strokeStyle = "#ed768e";
     ctx.strokeRect(corePose.x - 5, corePose.y - 5, 10, 10);
+
+    const grabX = p.contactRelX ?? 0;
+    const grabY = p.contactRelY ?? 0;
+    if ((p.grabPressure ?? 0) > 0.01 || Math.hypot(grabX, grabY) > 1) {
+      const radius = p.influenceRadius ?? 58;
+      ctx.strokeStyle = "rgba(244,63,94,0.7)";
+      ctx.beginPath();
+      ctx.arc(grabX, grabY, radius, 0, TAU);
+      ctx.stroke();
+      ctx.fillStyle = "#f43f5e";
+      ctx.beginPath();
+      ctx.arc(grabX, grabY, 3.5, 0, TAU);
+      ctx.fill();
+    }
+
+    const wnx = p.contactX ?? 0;
+    const wny = p.contactY ?? 0;
+    if ((p.contactPressure ?? 0) > 0.04) {
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(corePose.x, corePose.y);
+      ctx.lineTo(corePose.x + wnx * 42, corePose.y + wny * 42);
+      ctx.stroke();
+    }
   }
   ctx.restore();
 
@@ -861,4 +992,5 @@ export function renderCloudBlob(
   ctx.fillStyle = "#000";
   ctx.fill();
   ctx.restore();
+  noteDataset(ctx, "renderMs", ((typeof performance !== "undefined" && performance.now ? performance.now() : 0) - renderStart).toFixed(2));
 }
