@@ -1,81 +1,53 @@
 # LCDPROTO Source of Truth Provenance
 
-This document records the exact upstream LCDPROTO revisions consumed by `blob-mobile`.
+This document records the exact upstream LCDPROTO revision consumed by `blob-mobile`.
 
 ## Runtime Vendor Source
 
 - **Repository**: `Maxkhrys/LCDPROTO`
-- **Branch**: `tune/cherri-grab-squish-visible`
-- **Commit SHA**: `a9ce979b5a60c2b3b8301ff7fe40b46106b6ce0a`
-- **Commit Date**: `2026-09-07`
-- **Commit Subject**: `tune(drag): boost tactile grab squish visibility and material response`
+- **Branch**: `feat/grok-terra-orientation-synthesis-v1`
+- **Commit SHA**: `7d26f8ba6b8709d38b071115a025ba0dfeaefbee`
+- **Commit subject**: `feat(orientation): synthesise Terra 3D turning with Grok acting follow-through`
 
-This vendor snapshot includes:
-- **Cherri Mind V4**: Full autonomous acting system (`lib/mind/` [31 files] including director, planner, catalog, drives, mood state machine, spatial memory, and transitions) driven via `controller.update(dtMs, behaviourConfig, true)`.
-- **Protected Facing Ownership**: Single-owner facing via `applyCloudFacing(facing, yaw, pitch, dt)`. The velocity-derived second heading layer is removed; the acted rig is the sole facing authority, with organic shell follow-through.
-- **Tactile Grab Squish & Dent Physics**: Real local deformation under touch with contact vectoring (`grabPressure`, `contactDistance`, `contactAngle`, `normalCompression`, `tangentExpansion`, `faceShiftX`, `faceShiftY`), wall pressure resistance, and release snapback.
-- **Interaction Sensing**: `InteractionSensor` converts raw touches, holds, drags, flicks, and wall collisions into structured `MindEvent` streams notifying Cherri Mind V4.
-- **Volumetric Cloud Rendering & Mist**: 7-lobe procedural soft-body physics, billowy cumulus alpha stamps, mist wisps and trails.
-- **Pinned Inventory**: 62 upstream source files tracked with SHA-256 integrity hashes in `vendor/lcdproto/manifest.json`.
+This is one coherent character-runtime snapshot. Mind, behaviours, mouths, primitives, orientation, physics, drag, and cloud lobe/render all come from that SHA. The previous mixed snapshot (`a9ce979` mind plus a 7d26 orientation subset) is replaced.
 
-## Synchronized Modules & Architectures
+`vendor/lcdproto/manifest.json` stores SHA-256 for every copied file. `vendor/lcdproto/EXCLUSIONS.md` records every deliberately excluded source path and why. `lib/motionPreview.ts` is removed. It was a mobile-only approximation, not part of LCDPROTO.
 
-| LCDPROTO Source | Mobile Domain Module | Notes |
-| :--- | :--- | :--- |
-| `lib/mind/**` (31 files) | vendored runtime | Cherri Mind V4 autonomous director, story catalog, drives, planner, transitions |
-| `lib/mind/cloudFacing.ts` | vendored runtime | Protected facing neutrality (`applyCloudFacing`), eliminating velocity drift |
-| `lib/mind/eventSense.ts` | vendored runtime | `InteractionSensor` emitting pointer/drag/wall events to the Mind director |
-| `lib/behaviours/controller.ts` | vendored runtime | Modern `BehaviourController` integrating Mind V4, primitives, and performances |
-| `lib/behaviours/primitives.ts` | vendored runtime | Acted character primitive motions and poses |
-| `components/experimental/cloud-blob/cloudLobeSystem.ts` | vendored runtime | Authored lobes, droplets, spring physics, 2.5D turn depth, tactile squish |
-| `components/experimental/cloud-blob/cloudRenderer.ts` | vendored runtime | Volumetric alpha stamps, curved face projection, directional light, turning |
-| `components/experimental/cloud-blob/cloudMistTrails.ts` | vendored runtime | Procedural mist trail physics |
-| `components/blob/faceRenderer.ts` | vendored runtime | Production black eyes, brows, procedural mouth |
-| `lib/blobDrag.ts` / `lib/blobPhysics.ts` | vendored runtime | Direct drag, tactile grab squish, inertia, circular boundary collision |
-| `lib/cloudPresets.ts` | `src/domain/palettes/` | Built-in Cloud presets and custom preset schema |
-| `lib/characters.ts` | `src/domain/character/` | Cloud material, motion, mist and face-control definitions |
-| `lib/deviceStates.ts` | `src/domain/productStates/` | Canonical product-state vocabulary plus mobile GOODBYE extension |
-| `lib/stateEmotionMap.ts` | `src/domain/productStates/` | State expression/performance mapping |
-| `lib/expressionCatalog.ts` | `src/domain/expressions/` | Canonical behaviour vocabulary |
-| `lib/expressions/types.ts` | `src/domain/devlab/types.ts` | Expression Maker recipe shape |
-| `lib/performances/corePerformances.ts` | runtime + `src/domain/devlab/catalog.ts` | Canonical core performance clips |
-| `lib/performances/performanceRunner.ts` | vendored runtime | Deterministic performance playback |
-| `lib/screenCatalogue.ts` | `src/domain/devlab/catalog.ts` | System-screen metadata and lifecycle flows |
-| `lib/environmentConfig.ts` | `src/domain/environments/` | Canonical dark/warm/brown environment modes |
+## Character runtime closure
 
-## Mobile Runtime Architecture
+Started from `lib/behaviours/controller.ts` and `lib/mind/director.ts`, then followed relative and `@/` imports.
 
-`vendor/lcdproto/manifest.json` pins exact upstream files. `scripts/build-runtime.cjs` compiles those files into the WebView/Canvas runtime. The mobile app does not own a second Cloud geometry or physics implementation.
+Included and required to execute the current character:
 
-Dev Lab extends this runtime through a typed live bridge. Controls update the already-running 466×466 runtime rather than reloading the WebView.
+- `lib/behaviours/controller.ts`, `primitives.ts`, `mouths.ts`, `types.ts`, `index.ts`
+- `lib/mind/**` including `director.ts`, `acting.ts`, `commands.ts`, `memory.ts`, `scoring.ts`, `performance.ts`, `spatial.ts`, `eventSense.ts`, `cloudFacing.ts`, and `catalogue/*` (signature, micro, rare, interaction, sleepy, happy, authoring, and the rest of the current catalogue)
+- `lib/blobRig.ts`, `blobPhysics.ts`, `blobDrag.ts`, `blobIdle.ts`, `blobMind.ts`, `blobBehaviour.ts`, `blobCalibration.ts`, `expressionCatalog.ts`, `orientation.ts`, `poseTruth.ts`
+- Cloud runtime: `cloudLobeSystem.ts`, `cloudRenderer.ts`, `cloudTypes.ts`, `cloudMistTrails.ts`, plus `cloudPerformance.ts` because the existing mobile host still constructs `PerformanceRunner`
+- `components/blob/faceRenderer.ts` because the cloud renderer draws the canonical mouth/eyes through it
+- `components/states/EnvironmentLayer.tsx` and `lib/environmentConfig.ts` for the existing scene/shadow extraction. The scene bundle binds `composeOrientation` and `rotateVec3` from the vendored orientation module.
 
-Current live bridge covers:
+Host metadata copied from the same SHA, not a second brain: `lib/characters.ts`, `characterTypes.ts`, `cloudPresets.ts`, `deviceStates.ts`, `expressions/coreExpressions.ts`, `expressions/types.ts`, `performances/*`, `screenCatalogue.ts`, `stateEmotionMap.ts`.
 
-- material / lobe settings
-- optical settings
-- motion settings
-- mist settings
-- face placement
-- yaw / pitch
-- product state
-- direct touch drag
-- canonical behaviours
-- canonical performance clips
-- Expression Maker recipe override
-- play / pause / reset / center / clear trails
-- runtime telemetry
+## Mobile adapter
 
-## Future Synchronization Rule
+`src/components/character/cloudCanvasRuntime.ts` is a platform host only. It instantiates the vendored `BehaviourController`, feeds touch through `InteractionSensor` / `BlobDragController`, and translates the canonical pose into the existing canvas renderer.
 
-Do not assume `main` is current.
+Developer buttons are a trigger wrapper: `playStory`, `setActingCycle`, `setActingIntensity`, `forceMindMood`, `thinkNow`, `reset`, and `trigger` for acrobat ids. They do not schedule a second mobile mind.
 
-Before every sync:
+Facing follow-through delays are the source constants in `lib/mind/cloudFacing.ts`: eyes immediate, core `0.048s`, shell yaw `0.105s`, crown `0.145s`, mass `0.165s`.
 
-1. Inspect recent LCDPROTO branches and commits.
-2. Compare Cloud/runtime files, not branch names alone.
-3. Record exact source branch and SHA.
-4. Update `vendor/lcdproto/manifest.json` only when source files are actually re-vendored.
-5. Run `npm run build:runtime` after vendor changes.
-6. Run `npm run typecheck` and `npm run lint` before merge.
+Renderer safety clamps match web `CloudCharacter` / `HomeState`:
 
-Do not overwrite newer branch-only Cloud work with an older `main` file just because `main` has a newer-looking production label.
+| Channel | WEB INPUT | MOBILE INPUT | CLAMP | FINAL OUTPUT |
+| :--- | :--- | :--- | :--- | :--- |
+| jelly squash | `blobScaleX/Y` | same pose | ±0.10 | body deform base |
+| body deform | `bodyScaleX/Y` | same pose | ±0.34 | body scale |
+| acting scale X | `body.scaleX` | same | 0.72–1.55, then grab weight | `actingScaleX` |
+| acting scale Y | `body.scaleY` | same | 0.70–1.60 | `actingScaleY` |
+| grab smear | silhouette scale | same | 0.38 only while grabbed or on a wall | `scaleX/Y` |
+
+`DEMO_60S_ADORABILITY` is authored inside `CherriMind` (`lib/mind/director.ts`), not the catalogue map. Mobile plays it through `BehaviourController.playStory` / `playAdorabilityDemo`.
+
+## Developer route
+
+`/motion-preview` is the developer brain lab. It is not a visual imitation sequencer.

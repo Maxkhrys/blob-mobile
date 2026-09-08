@@ -51,12 +51,6 @@ export interface RenderOptions {
   showContactShadow?: boolean;
 }
 const TAU = Math.PI * 2;
-
-function noteDataset(ctx: CanvasRenderingContext2D, key: string, value: string) {
-  const canvas = (ctx as CanvasRenderingContext2D & { canvas?: HTMLCanvasElement }).canvas;
-  if (!canvas || !canvas.dataset) return;
-  canvas.dataset[key] = value;
-}
 /** 466-space distance between authored depth tiers, for the 2.5D rotation. */
 const DEPTH_UNIT = 34;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -580,7 +574,7 @@ function drawFace(
   ctx.translate(core.x + mouth.point.x, core.y + mouth.point.y);
   ctx.rotate(Math.atan2(mouth.tangentX.y, mouth.tangentX.x));
   ctx.globalAlpha *= t.opacity * mouth.visibility * clamp(0.74 + mouthDepth * 0.26, 0.74, 1.04);
-  noteDataset(ctx, "mouthTongue", String(t.mouthTongue ?? 0));
+  ctx.canvas.dataset.mouthTongue = String(t.mouthTongue ?? 0);
   drawMouthShape(
     ctx,
     a.width * 1.18 * clamp(t.scaleX * (0.14 + mouth.width * 0.86) * mouthDepth, 0.12, 1.38),
@@ -599,10 +593,10 @@ export function renderCloudBlob(
   ctx: CanvasRenderingContext2D,
   o: RenderOptions,
 ): void {
-  const renderStart = typeof performance !== "undefined" && performance.now ? performance.now() : 0;
+  const renderStart = performance.now();
   const { size, renderScale, params: p, lobeStates, colour, idleTime: t } = o;
   const s = getStamps(ctx, colour, p);
-  noteDataset(ctx, "stampBuilds", String(s.builds));
+  ctx.canvas.dataset.stampBuilds = String(s.builds);
   ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
   ctx.clearRect(0, 0, size, size);
   ctx.save();
@@ -892,7 +886,7 @@ export function renderCloudBlob(
   // 10. LOCAL FACIAL DEPTH EMBEDDING. The front surface normal controls this
   // bed too, so no face-shaped mist survives on the back of the volume.
   const faceFront = smoothstep(-0.05, 0.22, rotateVec3(faceMatrix, { x: 0, y: 0, z: 1 }).z);
-  noteDataset(ctx, "faceFront", faceFront.toFixed(3));
+  ctx.canvas.dataset.faceFront = faceFront.toFixed(3);
   if (faceFront > 0.01) {
     stamp(ctx, s.core, corePose.x, corePose.y + 8, 96 * corePose.scaleX, 74 * corePose.scaleY, 0.42 * faceFront);
     stamp(ctx, s.mist, corePose.x, corePose.y + 26, 88, 44, Math.max(0.08, p.faceEmbedDepth * 0.2) * faceFront);
@@ -992,5 +986,5 @@ export function renderCloudBlob(
   ctx.fillStyle = "#000";
   ctx.fill();
   ctx.restore();
-  noteDataset(ctx, "renderMs", ((typeof performance !== "undefined" && performance.now ? performance.now() : 0) - renderStart).toFixed(2));
+  ctx.canvas.dataset.renderMs = (performance.now() - renderStart).toFixed(2);
 }

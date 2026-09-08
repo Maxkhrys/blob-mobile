@@ -1,8 +1,8 @@
 import type { CloudSettingsValues } from "../character/cloudSliders";
 
-export const LCDPROTO_SOURCE_BRANCH = "tune/cherri-grab-squish-visible" as const;
+export const LCDPROTO_SOURCE_BRANCH = "feat/grok-terra-orientation-synthesis-v1" as const;
 export const LCDPROTO_SOURCE_SHA =
-  "a9ce979b5a60c2b3b8301ff7fe40b46106b6ce0a" as const;
+  "7d26f8ba6b8709d38b071115a025ba0dfeaefbee" as const;
 export const LCDPROTO_MAIN_REFERENCE_SHA =
   "bd2460fbc78c1d1e6dfe9cac4b362ddd887df6c3" as const;
 
@@ -103,7 +103,16 @@ export type DevLabRuntimeCommand =
   | { type: "triggerMotion"; id: string }
   | { type: "triggerPerformance"; id: string }
   | { type: "applyExpressionRecipe"; recipe: ExpressionRecipe }
-  | { type: "clearExpressionRecipe" };
+  | { type: "clearExpressionRecipe" }
+  | { type: "setAutoMind"; enabled: boolean }
+  | { type: "setMood"; id: string }
+  | { type: "setActingCycle"; id: string }
+  | { type: "setActingIntensity"; id: string }
+  | { type: "nextThought" }
+  | { type: "playShowcase" }
+  | { type: "playStory"; id: string }
+  | { type: "playSignature"; id: string }
+  | { type: "resetMind" };
 
 export interface DevLabTelemetry {
   fps: number;
@@ -126,6 +135,32 @@ export interface DevLabTelemetry {
   wispCount: number;
   active: boolean;
   lcdprotoSha: string;
+  autoMind?: boolean;
+  storyId?: string | null;
+  phase?: string | null;
+  mood?: string | null;
+  cycle?: string | null;
+  intensity?: string | null;
+  primitive?: string | null;
+  cue?: string | null;
+  actingAmount?: number;
+  mouthTongue?: number;
+  mouthAction?: string | null;
+  actingScaleX?: number;
+  actingScaleY?: number;
+  actingPuff?: number;
+  bodyScaleX?: number;
+  bodyScaleY?: number;
+  facingYaw?: number;
+  facingPitch?: number;
+  performanceYaw?: number;
+  performancePitch?: number;
+  performanceRoll?: number;
+  coreYaw?: number;
+  shellYaw?: number;
+  crownYaw?: number;
+  massYaw?: number;
+  recentStories?: string[];
 }
 
 export interface DevPreset {

@@ -8,6 +8,8 @@ import {
 import { FACE_STYLE } from "../blobRig";
 import { CherriMind } from "../mind/director";
 import type {
+  ActingCycle,
+  ActingIntensity,
   FacingIntent,
   MindCue,
   MindEvent,
@@ -27,7 +29,10 @@ import {
   ZERO_FRAME,
   type BodyFrame,
 } from "./primitives";
+import { isMouthBehaviour, MOUTH_RECIPES } from "./mouths";
 import { STORY_BY_ID } from "../mind/catalogue";
+import { INTENSITY_SCALE } from "../mind/acting";
+import { nearestEquivalentAngle, settleTurnAngle } from "../orientation";
 import {
   type BehaviourConfig,
   type BehaviourId,
@@ -57,6 +62,30 @@ const preserveAreaX = (scaleYDelta: number) => 1 / (1 + scaleYDelta) - 1;
 // Intentional exit point: once the Blob has faded, move its tiny remnant
 // beyond the 233px circular glass so the vanish is spatial, not just opacity.
 const VANISH_EDGE = 248;
+
+type AcrobatBehaviour =
+  | "SPIN_360"
+  | "BACKFLIP"
+  | "FRONTFLIP"
+  | "CARTWHEEL_LEFT"
+  | "CARTWHEEL_RIGHT";
+
+interface AcrobatState {
+  id: AcrobatBehaviour;
+  startedAt: number;
+  duration: number;
+  /** Unwrapped rest pose this move starts from, so a second spin is 360→720. */
+  baseYaw: number;
+  basePitch: number;
+  baseRoll: number;
+}
+
+const isAcrobatBehaviour = (id: BehaviourId): id is AcrobatBehaviour =>
+  id === "SPIN_360" ||
+  id === "BACKFLIP" ||
+  id === "FRONTFLIP" ||
+  id === "CARTWHEEL_LEFT" ||
+  id === "CARTWHEEL_RIGHT";
 
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -245,8 +274,13 @@ export class BehaviourController {
   private beatMouthId: MouthBehaviour | null = null;
   private beatBodyId: BodyBehaviour | null = null;
   private manualBeat = false;
-  private spinStartedAt = -1;
-  private spinRotation = 0;
+  /** One performance orientation path for spin, flips, and cartwheels. */
+  private acrobat: AcrobatState | null = null;
+  private performanceYaw = 0;
+  private performancePitch = 0;
+  private performanceRoll = 0;
+  /** Dev-only manual normal-turn scrub. It never writes through physics/drag. */
+  private orientationLab: { yaw: number; pitch: number } | null = null;
   private impactAt = 0;
   private impactDirection = 0;
   private specialAction: SpecialBehaviour | null = null;
@@ -308,6 +342,12 @@ export class BehaviourController {
   private readonly mouthO = new SpringAxis();
   private readonly mouthD = new SpringAxis();
   private readonly mouthCrescent = new SpringAxis();
+  private readonly mouthTongue = new SpringAxis();
+  private readonly tintAmountSpring = new SpringAxis();
+  private tintRValue = 255;
+  private tintGValue = 180;
+  private tintBValue = 190;
+  private pendingMouthHoldMs = 0;
   private mouthOpacityValue = 1;
   private mouthTurnStartedAt = -1;
   private mouthTurnTarget = 0;
@@ -369,6 +409,9 @@ export class BehaviourController {
   private primitiveDir = 0;
   private readonly primitiveFrame: BodyFrame = { ...ZERO_FRAME };
   private readonly primitiveScratch: BodyFrame = { ...ZERO_FRAME };
+  /** Source cue for the active primitive, when it came from a compiled plan. */
+  private primitiveCue: MindCue | null = null;
+  private primitiveCueIndex = -1;
   private mindIntentionOverride: BlobIntention | null = null;
   private mindDestinationOverride: BlobDestination | null = null;
   private mindDepthOverride: number | null = null;
@@ -408,6 +451,12 @@ export class BehaviourController {
   private activeFacingIntent: FacingIntent = "FORWARD";
   private currentYawSource: YawSource = "NEUTRAL";
   private storyHoldsFacing = false;
+  /** Eyes move first; faced core starts 70–120ms later. */
+  private facingLeadAt = 0;
+  /** Same lead for a velocity-facing transit arc. */
+  private transitLeadAt = 0;
+  private pendingFacingYaw: number | null = null;
+  private pendingFacingPitch: number | null = null;
 
   get travelXTarget(): number {
     return this.worldXTarget + this.localBodyX;
@@ -461,6 +510,11 @@ export class BehaviourController {
   private forcedPlanRequested = false;
   private manualPlanActive = false;
   private manualPlanUntil = 0;
+  /** Interaction owns the presentation until the matching release arrives. */
+  private interactionHeld = false;
+  /** Events are normally drained by the next mind tick; keep that tick alive
+   * even when Auto is disabled so touch interrupts still reach the director. */
+  private mindEventPending = false;
 
   reset() {
     this.clock = 0;
@@ -469,6 +523,8 @@ export class BehaviourController {
     this.forcedPlanRequested = false;
     this.manualPlanActive = false;
     this.manualPlanUntil = 0;
+    this.interactionHeld = false;
+    this.mindEventPending = false;
     this.rand = mulberry32(0x1a11ee);
     this.mind.reset();
     this.mindV3.reset();
@@ -528,6 +584,10 @@ export class BehaviourController {
     this.activeFacingIntent = "FORWARD";
     this.currentYawSource = "NEUTRAL";
     this.storyHoldsFacing = false;
+    this.facingLeadAt = 0;
+    this.transitLeadAt = 0;
+    this.pendingFacingYaw = null;
+    this.pendingFacingPitch = null;
     this.travelProgress = 1;
     this.travelDuration = 800;
     this.travelStartX = 0;
@@ -545,8 +605,11 @@ export class BehaviourController {
     this.travelReturnPolicy = "HOLD";
     this.currentSpatialZone = "CENTER";
     this.targetSpatialZone = "CENTER";
-    this.spinStartedAt = -1;
-    this.spinRotation = 0;
+    this.acrobat = null;
+    this.performanceYaw = 0;
+    this.performancePitch = 0;
+    this.performanceRoll = 0;
+    this.orientationLab = null;
     this.impactAt = 0;
     this.impactDirection = 0;
     this.specialAction = null;
@@ -590,6 +653,12 @@ export class BehaviourController {
     this.mouthO.reset();
     this.mouthD.reset();
     this.mouthCrescent.reset();
+    this.mouthTongue.reset();
+    this.tintAmountSpring.reset();
+    this.tintRValue = 255;
+    this.tintGValue = 180;
+    this.tintBValue = 190;
+    this.pendingMouthHoldMs = 0;
     this.mouthOpacityValue = 1;
     this.mouthTurnStartedAt = -1;
     this.mouthTurnTarget = 0;
@@ -623,7 +692,75 @@ export class BehaviourController {
 
   /** Feeds one context event to the director. Safe to call from any frame. */
   notify(event: MindEvent) {
+    if (event.id === "GRAB_START") {
+      this.interactionHeld = true;
+      this.interruptForInteraction();
+    } else if (event.id === "TOUCH_TAP" || event.id === "TOUCH_DOUBLE_TAP") {
+      this.interruptForInteraction();
+    } else if (event.id === "RELEASE") {
+      this.interactionHeld = false;
+      this.deferAutomaticSchedule(900);
+    }
     this.mindV3.push(event);
+    this.mindEventPending = true;
+  }
+
+  /**
+   * Stop an authored presentation at the input boundary. The director also
+   * receives the event below, but it cannot clear the controller's compiled
+   * cues or its manual lock, so those are reset here before the next frame.
+   */
+  private interruptForInteraction() {
+    this.clearPlan();
+    this.clearBeatCues();
+    this.forcedPlanRequested = false;
+    this.manualPlanActive = false;
+    this.manualPlanUntil = 0;
+    this.gazeReleaseAt = 0;
+    this.expressionReleaseAt = 0;
+    this.mouthReleaseAt = 0;
+    this.bodyReleaseAt = 0;
+    this.pendingMouthHoldMs = 0;
+    this.tintAmountSpring.target = 0;
+    this.mouthTongue.target = 0;
+    this.mouthAction = "MOOD";
+    this.applyMoodTargets();
+    this.clearBodyTargets();
+    // Do not let a pre-touch route keep pulling the body while the user owns
+    // it. The next release can schedule a fresh move from this settled point.
+    this.travelProgress = 1;
+    this.travelTargetX = this.worldXTarget;
+    this.travelTargetY = this.worldYTarget;
+    this.travelTargetDepth = this.worldDepthTarget;
+    this.transitYaw = 0;
+    this.transitPitch = 0;
+    this.travelPeakYaw = 0;
+    this.travelPeakPitch = 0;
+    this.facingLeadAt = 0;
+    this.transitLeadAt = 0;
+    this.pendingFacingYaw = null;
+    this.pendingFacingPitch = null;
+    this.specialAction = null;
+    this.specialStartedAt = -1;
+    this.specialEmoteStarted = false;
+    this.specialScale = 0;
+    this.specialOpacity = 1;
+    this.clearAcrobat();
+    this.impactAt = 0;
+    this.activityId = "REST";
+    this.activityStartedAt = this.clock;
+    this.activityUntil = this.clock;
+    this.deferAutomaticSchedule(this.interactionHeld ? 60_000 : 900);
+  }
+
+  private deferAutomaticSchedule(delayMs: number) {
+    const at = this.clock + Math.max(0, delayMs);
+    this.nextMicroAt = at;
+    this.nextBeatAt = at;
+    this.nextGazeAt = at;
+    this.nextExpressionAt = at;
+    this.nextMouthAt = at;
+    this.nextBodyAt = at;
   }
 
   /** The high-level intent door for a future phone or cloud model. */
@@ -638,7 +775,11 @@ export class BehaviourController {
 
   /** Mind Lab / Playground: play one authored story by id, bypassing scoring. Returns false if not found. */
   playStory(storyId: string): boolean {
-    if (storyId !== "DEMO_60S_ADORABILITY" && !STORY_BY_ID.has(storyId)) {
+    if (storyId === "DEMO_60S_ADORABILITY") {
+      this.playAdorabilityDemo();
+      return true;
+    }
+    if (!STORY_BY_ID.has(storyId)) {
       console.warn(`[BehaviourController.playStory] Story not found in catalogue: "${storyId}"`);
       return false;
     }
@@ -660,7 +801,7 @@ export class BehaviourController {
     this.manualBeat = false;
     this.manualPlanActive = true;
     this.manualPlanUntil = this.clock + plan.durationMs;
-    this.startPlan(plan, cfg);
+    this.startPlan(plan, cfg, true);
   }
 
   /** Acting Playground: trigger a body primitive directly. Returns false if not found. */
@@ -668,6 +809,54 @@ export class BehaviourController {
     if (!PRIMITIVES[id]) return false;
     this.startPrimitive(id, amount, dir);
     return true;
+  }
+
+  /**
+   * Developer instrumentation only: exposes the sampled primitive truth before
+   * the caller adapts the controller pose into physics and a render rig.
+   *
+   * A direct trigger has no authored cue, so `cue` is null in that case. For a
+   * plan primitive, the compact cue metadata identifies the source beat without
+   * exposing the mutable plan object.
+   */
+  poseTruthSnapshot() {
+    const id = this.primitiveId;
+    const active = id !== null && this.primitiveStartedAt >= 0;
+    const cue = active && this.primitiveCue ? this.primitiveCue : null;
+    const planElapsedMs = this.plan
+      ? Math.max(0, this.clock - this.planStartedAt)
+      : null;
+    let phase: MindCue["phase"] | null = null;
+    if (this.plan && planElapsedMs !== null) {
+      for (const planCue of this.plan.cues) {
+        if (planCue.atMs <= planElapsedMs) phase = planCue.phase;
+        else break;
+      }
+    }
+    return {
+      clockMs: this.clock,
+      storyId: this.plan?.storyId ?? null,
+      planElapsedMs,
+      phase,
+      primitiveId: active ? id : null,
+      primitiveAmount: active ? this.primitiveAmount : 0,
+      primitiveDir: active ? this.primitiveDir : 0,
+      primitiveElapsedMs: active ? Math.max(0, this.clock - this.primitiveStartedAt) : 0,
+      primitiveDurationMs: active && id ? PRIMITIVES[id].durationMs : 0,
+      primitiveFrame: { ...this.primitiveFrame },
+      cue: cue
+        ? {
+            storyId: this.plan?.storyId ?? null,
+            index: this.primitiveCueIndex,
+            atMs: cue.atMs,
+            phase: cue.phase,
+            primitive: cue.primitive ?? null,
+            amount: cue.amount ?? null,
+            dir: cue.dir ?? null,
+            planElapsedMs: this.plan ? Math.max(0, this.clock - this.planStartedAt) : null,
+          }
+        : null,
+    };
   }
 
   /** Checks if a forced manual performance or route is currently executing. */
@@ -758,6 +947,25 @@ export class BehaviourController {
     this.mindV3.setMovementEnergy(level);
   }
 
+  /** Developer-only normal-turn scrub. It replaces facing only, not physics. */
+  setOrientationLab(orientation: { yaw: number; pitch: number } | null) {
+    if (orientation === null) {
+      this.orientationLab = null;
+      this.travelYawTarget = 0;
+      this.travelPitchTarget = 0;
+      this.targetBaseYaw = 0;
+      this.targetBasePitch = 0;
+      if (this.currentYawSource === "MANUAL") {
+        this.currentYawSource = Math.abs(this.travelYawTarget) > 0.1 ? "VELOCITY" : "NEUTRAL";
+      }
+      return;
+    }
+    if (!Number.isFinite(orientation.yaw) || !Number.isFinite(orientation.pitch)) return;
+    this.clearAcrobat();
+    this.orientationLab = { yaw: orientation.yaw, pitch: orientation.pitch };
+    this.currentYawSource = "MANUAL";
+  }
+
   get mindV4() {
     return this.mindV3;
   }
@@ -769,7 +977,17 @@ export class BehaviourController {
   playAdorabilityDemo() {
     this.forcedPlanRequested = true;
     this.manualBeat = false;
+    this.manualPlanActive = true;
+    this.manualPlanUntil = this.clock + 60_000;
     this.mindV3.forceStory("DEMO_60S_ADORABILITY");
+  }
+
+  setActingCycle(cycle: ActingCycle) {
+    this.mindV3.setActingCycle(cycle);
+  }
+
+  setActingIntensity(intensity: ActingIntensity) {
+    this.mindV3.setActingIntensity(intensity);
   }
 
   mindTelemetry(): MindTelemetry {
@@ -848,6 +1066,9 @@ export class BehaviourController {
     this.bodyReleaseAt = this.followAt = this.followReleaseAt = 0;
     this.baseGazeX = this.baseGazeY = this.microX = this.microY = 0;
     this.mouthOpacityValue = 1;
+    this.mouthTongue.reset();
+    this.tintAmountSpring.reset();
+    this.pendingMouthHoldMs = 0;
     this.mouthTurnStartedAt = -1;
     this.mouthTurnTarget = 0;
     this.mouthTurnSnapped = false;
@@ -881,8 +1102,11 @@ export class BehaviourController {
     this.activeFacingIntent = "FORWARD";
     this.currentYawSource = "NEUTRAL";
     this.storyHoldsFacing = false;
-    this.spinStartedAt = -1;
-    this.spinRotation = 0;
+    this.facingLeadAt = 0;
+    this.transitLeadAt = 0;
+    this.pendingFacingYaw = null;
+    this.pendingFacingPitch = null;
+    this.clearAcrobat();
     this.impactAt = 0;
     this.impactDirection = 0;
     this.specialAction = null;
@@ -907,8 +1131,8 @@ export class BehaviourController {
     // animation tick. Keep this direct cue alive through that transition;
     // Auto only controls the seeded playlist, never manual inspection.
     this.manualBeat = true;
-    if (id === "SPIN_360") {
-      this.startSpin();
+    if (isAcrobatBehaviour(id)) {
+      this.startAcrobat(id);
       return;
     }
     if (
@@ -959,12 +1183,7 @@ export class BehaviourController {
       this.startExpression(id);
       return;
     }
-    if (
-      id === "MOUTH_RELAX" ||
-      id === "MOUTH_TWITCH" ||
-      id === "MOUTH_O" ||
-      id === "MOUTH_FLIP"
-    ) {
+    if (isMouthBehaviour(id)) {
       this.startMouth(id);
       return;
     }
@@ -1023,7 +1242,7 @@ export class BehaviourController {
 
     this.updateSpecial();
     this.updateStoryTravel();
-    this.updateSpin();
+    this.updateAcrobat();
     this.updateBodyBeat();
     if (this.impactAt > 0 && this.clock >= this.impactAt) {
       this.impactAt = 0;
@@ -1096,9 +1315,10 @@ export class BehaviourController {
     this.runBeatCues(cfg);
     this.runMind(dtMs, cfg, autoEnabled);
     this.runPlanCues(cfg);
+    this.resolveFacingLead();
     this.updateTravel(dtMs);
 
-    if (autoEnabled) {
+    if (autoEnabled && !this.interactionHeld) {
       // Legacy mood picking only runs when Motion tab overrides are active.
       // In normal operation, Mind V3 owns character mood and intention.
       if (this.overridesActive() && this.clock >= this.nextMoodAt) {
@@ -1140,11 +1360,27 @@ export class BehaviourController {
    * personality.
    */
   private runMind(dtMs: number, cfg: BehaviourConfig, autoEnabled: boolean) {
+    // A grab is a presentation boundary. Keep the director clock and
+    // telemetry moving while its own held state suppresses new decisions.
+    if (this.interactionHeld) {
+      this.mindV3.tick(dtMs, false);
+      this.mindEventPending = false;
+      const mood = this.mindV3.mood;
+      if (mood !== this.mood) this.setMood(mood);
+      return;
+    }
+
     // If a manual plan is actively running and hasn't finished its duration,
     // lock out autonomous decisions so Cherri's manual performance is never cut short.
     if (this.manualPlanActive) {
       if (this.clock < this.manualPlanUntil) {
         if (!this.forcedPlanRequested) {
+          // The controller lock must not freeze Mind telemetry. Decisions stay
+          // disabled, but drives, elapsed time, and the active phase advance.
+          this.mindV3.tick(dtMs, false);
+          this.mindEventPending = false;
+          const mood = this.mindV3.mood;
+          if (mood !== this.mood) this.setMood(mood);
           return;
         }
       } else {
@@ -1153,9 +1389,13 @@ export class BehaviourController {
     }
 
     // Do not spend thoughts/cooldowns on performances that cannot execute.
-    if ((!autoEnabled && !this.forcedPlanRequested && !this.plan) ||
+    if ((!autoEnabled && !this.forcedPlanRequested && !this.plan && !this.mindEventPending) ||
         this.manualBeat || this.overridesActive()) return;
-    const next = this.mindV3.tick(dtMs, autoEnabled || this.forcedPlanRequested);
+    const next = this.mindV3.tick(
+      dtMs,
+      autoEnabled || this.forcedPlanRequested || this.mindEventPending
+    );
+    this.mindEventPending = false;
     const mood = this.mindV3.mood;
     if (mood !== this.mood) this.setMood(mood);
     if (!next) return;
@@ -1169,7 +1409,10 @@ export class BehaviourController {
       this.manualPlanActive = true;
       this.manualPlanUntil = this.clock + next.durationMs;
     }
-    this.startPlan(next, cfg);
+    // `forcedPlanRequested` is consumed above. Pass the explicit decision
+    // through so startPlan can replace an older locked plan instead of treating
+    // the new manual request as an ordinary competing thought.
+    this.startPlan(next, cfg, isForced);
   }
 
   private overridesActive() {
@@ -1188,10 +1431,12 @@ export class BehaviourController {
     this.manualPlanUntil = 0;
     this.primitiveId = null;
     this.primitiveStartedAt = -1;
+    this.primitiveCue = null;
+    this.primitiveCueIndex = -1;
     Object.assign(this.primitiveFrame, ZERO_FRAME);
   }
 
-  private startPlan(plan: MindPlan, cfg: BehaviourConfig) {
+  private startPlan(plan: MindPlan, cfg: BehaviourConfig, forceReplace = false) {
     // A micro-life cue must never wipe an authored performance mid-phrase.
     if (
       this.plan &&
@@ -1205,7 +1450,7 @@ export class BehaviourController {
       this.plan &&
       this.manualPlanActive &&
       this.clock < this.manualPlanUntil &&
-      !this.forcedPlanRequested
+      !forceReplace
     ) {
       return;
     }
@@ -1236,6 +1481,14 @@ export class BehaviourController {
     }
 
     this.runPlanCues(cfg);
+    if (plan.tintAmount && plan.tintAmount > 0) {
+      this.tintRValue = plan.tintR ?? 255;
+      this.tintGValue = plan.tintG ?? 180;
+      this.tintBValue = plan.tintB ?? 190;
+      this.tintAmountSpring.target = plan.tintAmount;
+    } else {
+      this.tintAmountSpring.target = 0;
+    }
   }
 
   /** A readable id for the activity readout: the first real body cue. */
@@ -1296,6 +1549,7 @@ export class BehaviourController {
       this.storyHoldsFacing = false;
       this.activeFacingIntent = "FORWARD";
     }
+    this.tintAmountSpring.target = 0;
   }
 
   private applyCue(cue: MindCue, cfg: BehaviourConfig) {
@@ -1322,58 +1576,121 @@ export class BehaviourController {
       this.applyFacing(cue.facing, !!cue.holdFacing);
     }
     if (cue.gaze) this.startGaze(cue.gaze, cfg);
-    if (cue.expression) this.startExpression(cue.expression);
-    if (cue.mouth) this.startMouth(cue.mouth);
+    if (cue.expression) this.startExpression(cue.expression, cue.holdMs);
+    if (cue.mouth) {
+      if (cue.expression || cue.gaze) {
+        this.beatMouthAt = this.clock + 70;
+        this.beatMouthId = cue.mouth;
+        this.pendingMouthHoldMs = cue.holdMs ?? 0;
+      } else {
+        this.startMouth(cue.mouth, cue.holdMs);
+      }
+    }
     if (cue.body) this.startBody(cue.body, cfg);
     if (cue.special === "SPIN_360") this.startSpin();
     else if (cue.special) this.startSpecial(cue.special, cfg);
-    if (cue.primitive) this.startPrimitive(cue.primitive, cue.amount ?? 1, cue.dir ?? 0);
+    if (cue.primitive) {
+      const amp = this.plan?.category === "MICRO"
+        ? 1
+        : INTENSITY_SCALE[this.mindV3.getActingIntensity()].amplitude;
+      this.startPrimitive(
+        cue.primitive,
+        (cue.amount ?? 1) * amp,
+        cue.dir ?? 0,
+        cue,
+        this.plan ? this.plan.cues.indexOf(cue) : -1,
+      );
+    }
     if (cue.blink && this.blinkStartedAt < 0) this.startBlink(false, cfg);
+    if (cue.phase === "RECOVERY") this.tintAmountSpring.target = 0;
+  }
+
+  private queueFacingAfterGaze(yaw: number, pitch: number) {
+    const yawDelta = yaw - this.targetBaseYaw;
+    const pitchDelta = pitch - this.targetBasePitch;
+    if (Math.hypot(yawDelta, pitchDelta) < 3.5) {
+      this.targetBaseYaw = yaw;
+      this.targetBasePitch = pitch;
+      this.pendingFacingYaw = null;
+      this.pendingFacingPitch = null;
+      this.facingLeadAt = 0;
+      return;
+    }
+
+    this.primeGazeLead(yawDelta, pitchDelta);
+    this.pendingFacingYaw = yaw;
+    this.pendingFacingPitch = pitch;
+    this.facingLeadAt = this.clock + 92;
+  }
+
+  private resolveFacingLead() {
+    if (this.pendingFacingYaw === null || this.pendingFacingPitch === null) return;
+    if (this.clock < this.facingLeadAt) return;
+    this.targetBaseYaw = this.pendingFacingYaw;
+    this.targetBasePitch = this.pendingFacingPitch;
+    this.pendingFacingYaw = null;
+    this.pendingFacingPitch = null;
+    this.facingLeadAt = 0;
+  }
+
+  /** Give pupils/eyes a short thought lead without inventing a new yaw owner. */
+  private primeGazeLead(yawDelta: number, pitchDelta: number) {
+    this.baseGazeX = clamp(Math.sign(yawDelta) * (5.8 + Math.min(2, Math.abs(yawDelta) * 0.08)), -8, 8);
+    this.baseGazeY = clamp(Math.sign(pitchDelta) * 4.4, -5.5, 5.5);
+    this.microX = 0;
+    this.microY = 0;
+    this.gazeAction = "TURN_LEAD";
+    this.gazeReleaseAt = Math.max(this.gazeReleaseAt, this.clock + 360);
+    this.retargetEyes();
+  }
+
+  private queueTransitAfterGaze(yaw: number, pitch: number) {
+    if (Math.hypot(yaw, pitch) < 3.5) {
+      this.transitLeadAt = 0;
+      return;
+    }
+    this.primeGazeLead(yaw, pitch);
+    this.transitLeadAt = this.clock + 92;
   }
 
   private applyFacing(facing: FacingIntent, holdFacing = false) {
     this.activeFacingIntent = facing;
     this.storyHoldsFacing = holdFacing;
+    let yaw = 0;
+    let pitch = 0;
+    let source: YawSource = "NEUTRAL";
     switch (facing) {
-      case "FORWARD":
-        this.targetBaseYaw = 0;
-        this.targetBasePitch = 0;
-        this.currentYawSource = "NEUTRAL";
-        break;
       case "LOOK_LEFT":
-        this.targetBaseYaw = -14;
-        this.targetBasePitch = 0;
-        this.currentYawSource = "STORY";
+        yaw = -14;
+        source = "STORY";
         break;
       case "LOOK_RIGHT":
-        this.targetBaseYaw = 14;
-        this.targetBasePitch = 0;
-        this.currentYawSource = "STORY";
+        yaw = 14;
+        source = "STORY";
         break;
       case "LOOK_UP":
-        this.targetBaseYaw = 0;
-        this.targetBasePitch = -10;
-        this.currentYawSource = "STORY";
+        pitch = -10;
+        source = "STORY";
         break;
       case "LOOK_DOWN":
-        this.targetBaseYaw = 0;
-        this.targetBasePitch = 8;
-        this.currentYawSource = "STORY";
+        pitch = 8;
+        source = "STORY";
         break;
       case "FACE_TRAVEL":
-        this.targetBaseYaw = 0;
-        this.targetBasePitch = 0;
-        this.currentYawSource = "VELOCITY";
+        source = "VELOCITY";
         break;
       case "FACE_TARGET": {
         const destPose = DESTINATION_POSES[this.targetSpatialZone];
         const dx = destPose.x - this.worldXTarget;
-        this.targetBaseYaw = Math.sign(dx) * Math.min(14, Math.abs(dx) * 0.14);
-        this.targetBasePitch = 0;
-        this.currentYawSource = "STORY";
+        yaw = Math.sign(dx) * Math.min(14, Math.abs(dx) * 0.14);
+        source = "STORY";
         break;
       }
+      case "FORWARD":
+        break;
     }
+    this.currentYawSource = source;
+    this.queueFacingAfterGaze(yaw, pitch);
   }
 
   /** Retargets the character with spatial arc and physical timing. */
@@ -1422,6 +1739,7 @@ export class BehaviourController {
     } else {
       this.travelPeakPitch = 0;
     }
+    this.queueTransitAfterGaze(this.travelPeakYaw, this.travelPeakPitch);
 
     if (facingIntent) {
       this.applyFacing(facingIntent, this.storyHoldsFacing);
@@ -1511,8 +1829,12 @@ export class BehaviourController {
 
       // Bell curve for transit yaw: rises dynamically into travel direction mid-transit
       const transitBell = Math.pow(Math.sin(Math.PI * t), 0.85);
-      this.transitYaw = this.travelPeakYaw * transitBell;
-      this.transitPitch = this.travelPeakPitch * transitBell;
+      const orientationLead =
+        this.transitLeadAt <= 0
+          ? 1
+          : smoothstep(clamp01((this.clock - this.transitLeadAt) / 92));
+      this.transitYaw = this.travelPeakYaw * transitBell * orientationLead;
+      this.transitPitch = this.travelPeakPitch * transitBell * orientationLead;
 
       this.worldXTarget = mix(this.travelStartX, this.travelTargetX, easedT);
       this.worldYTarget = mix(this.travelStartY, this.travelTargetY, easedT) + liftOffset;
@@ -1529,6 +1851,7 @@ export class BehaviourController {
         this.worldDepthTarget = this.travelTargetDepth;
         this.transitYaw = 0;
         this.transitPitch = 0;
+        this.transitLeadAt = 0;
         if (!this.storyHoldsFacing) {
           this.targetBaseYaw = 0;
           this.targetBasePitch = 0;
@@ -1556,11 +1879,36 @@ export class BehaviourController {
     }
   }
 
-  private startPrimitive(id: PrimitiveId, amount: number, dir: number) {
+  private startPrimitive(
+    id: PrimitiveId,
+    amount: number,
+    dir: number,
+    cue: MindCue | null = null,
+    cueIndex = -1,
+  ) {
+    const nextAmount = clamp(amount, 0, 1.85);
+    if (this.primitiveId === id && this.primitiveStartedAt >= 0) {
+      const meta = PRIMITIVES[id];
+      const t = (this.clock - this.primitiveStartedAt) / Math.max(1, meta.durationMs);
+      // Retriggering the same clip-worthy primitive used to restart the attack
+      // envelope, so inflate/pancake never held a readable peak. Pin to plateau.
+      if (t > 0.12 && t < 0.82) {
+        this.primitiveAmount = Math.max(this.primitiveAmount, nextAmount);
+        this.primitiveDir = dir;
+        this.primitiveStartedAt = this.clock - meta.durationMs * 0.4;
+        if (cue) {
+          this.primitiveCue = cue;
+          this.primitiveCueIndex = cueIndex;
+        }
+        return;
+      }
+    }
     this.primitiveId = id;
     this.primitiveStartedAt = this.clock;
-    this.primitiveAmount = clamp(amount, 0, 1.6);
+    this.primitiveAmount = nextAmount;
     this.primitiveDir = dir;
+    this.primitiveCue = cue;
+    this.primitiveCueIndex = cueIndex;
   }
 
   /**
@@ -1583,6 +1931,8 @@ export class BehaviourController {
     if (t >= 1) {
       this.primitiveId = null;
       this.primitiveStartedAt = -1;
+      this.primitiveCue = null;
+      this.primitiveCueIndex = -1;
       Object.assign(this.primitiveFrame, ZERO_FRAME);
       return;
     }
@@ -1648,7 +1998,8 @@ export class BehaviourController {
       const id = this.beatMouthId;
       this.beatMouthAt = 0;
       this.beatMouthId = null;
-      if (id) this.startMouth(id);
+      if (id) this.startMouth(id, this.pendingMouthHoldMs);
+      this.pendingMouthHoldMs = 0;
     }
     if (this.beatBodyAt > 0 && this.clock >= this.beatBodyAt) {
       const id = this.beatBodyId;
@@ -1780,7 +2131,7 @@ export class BehaviourController {
   }
 
   private startGaze(id: BehaviourId, cfg: BehaviourConfig) {
-    const amount = clamp(cfg.gazePx, 0, 11) * (this.plan?.category === "MICRO" ? 0.22 : 1);
+    const amount = clamp(cfg.gazePx, 0, 11) * (this.plan?.category === "MICRO" ? 0.72 : 1);
     let x = 0;
     let y = 0;
     let bodyDir = 0;
@@ -1820,9 +2171,10 @@ export class BehaviourController {
     this.gazeReleaseAt = this.clock + duration;
     this.retargetEyes();
     this.followAt = this.clock + 85 + this.rand() * 35;
-    this.followXTarget = this.plan?.category === "MICRO" ? 0 : bodyDir * 3;
-    this.followRotationTarget = this.plan?.category === "MICRO" ? 0 : bodyDir * 1.25;
+    this.followXTarget = this.plan?.category === "MICRO" ? bodyDir * 1.35 : bodyDir * 3;
+    this.followRotationTarget = this.plan?.category === "MICRO" ? bodyDir * 0.45 : bodyDir * 1.25;
     this.followScaleYTarget = y < -1 ? 0.025 : y > 1 ? -0.022 : -0.012;
+    if (this.plan?.category === "MICRO") this.followScaleYTarget *= 0.4;
     // A gaze shift gets a small confirming blink after the eyes land. The
     // seeded interval still controls ordinary blinks; this only moves the next
     // one earlier when a look has just happened.
@@ -1896,7 +2248,7 @@ export class BehaviourController {
    */
   private applyPosture(id: ExpressionBehaviour | null) {
     const p = id ? BehaviourController.EXPRESSION_POSTURE[id] : null;
-    const scale = this.plan?.category === "MICRO" ? 0.3 : 1;
+    const scale = this.plan?.category === "MICRO" ? 0.55 : 1;
     this.posture.lift = (p?.lift ?? 0) * scale;
     this.posture.puff = (p?.puff ?? 0) * scale;
     this.posture.depth = (p?.depth ?? 0) * scale;
@@ -1907,7 +2259,7 @@ export class BehaviourController {
     this.postureLean.target = this.posture.lean;
   }
 
-  private startExpression(id: ExpressionBehaviour) {
+  private startExpression(id: ExpressionBehaviour, holdMs = 0) {
     const mood = MOODS[this.mood];
     const moodFace = MOOD_FACE[this.mood];
     let duration = 850;
@@ -2093,79 +2445,46 @@ export class BehaviourController {
     this.leftEyeStyle = style;
     this.rightEyeStyle = style;
     this.lidAction = id;
+    if (this.plan?.category === "MICRO") {
+      const k = 0.36;
+      this.leftTension.target = mood.leftTension + (this.leftTension.target - mood.leftTension) * k;
+      this.rightTension.target = mood.rightTension + (this.rightTension.target - mood.rightTension) * k;
+      this.leftScaleX.target = mood.eyeScaleX + (this.leftScaleX.target - mood.eyeScaleX) * k;
+      this.rightScaleX.target = mood.eyeScaleX + (this.rightScaleX.target - mood.eyeScaleX) * k;
+      this.leftScaleY.target = mood.eyeScaleY + (this.leftScaleY.target - mood.eyeScaleY) * k;
+      this.rightScaleY.target = mood.eyeScaleY + (this.rightScaleY.target - mood.eyeScaleY) * k;
+      this.leftLidBias.target *= k;
+      this.rightLidBias.target *= k;
+    }
     this.applyPosture(id);
-    this.expressionReleaseAt = this.clock + duration;
+    this.expressionReleaseAt = this.clock + duration + this.peakHoldMs(holdMs);
     this.mark(id, duration + 300);
   }
 
-  private startMouth(id: BehaviourId) {
-    let duration = 720;
-    if (id === "MOUTH_RELAX") {
-      this.mouthX.target = 0;
-      this.mouthY.target = 0.7;
-      this.mouthScaleX.target = 0.09;
-      this.mouthScaleY.target = -0.1;
-      this.mouthCurve.target = 0.5;
-      this.mouthO.target = 0;
-      this.mouthCrescent.target =
-        this.faceStyle === FACE_STYLE.HAPPY || this.faceStyle === FACE_STYLE.CONTENT
-          ? 0.72
-          : 0;
-      this.mouthD.target =
-        this.faceStyle === FACE_STYLE.EXCITED
-          ? 0.82
-          : this.faceStyle === FACE_STYLE.ANGRY
-            ? 0.68
-            : this.faceStyle === FACE_STYLE.SAD
-              ? 0.12
-              : 0;
-      this.setMouthRotationTarget(0);
-      duration = 900 + this.rand() * 500;
-    } else if (id === "MOUTH_TWITCH") {
-      const dir = this.rand() < 0.5 ? -1 : 1;
-      this.mouthX.target = dir * 0.9;
-      this.mouthY.target = -0.08;
-      this.mouthScaleX.target = 0.04;
-      this.mouthScaleY.target = -0.02;
-      this.mouthCurve.target = 0.62 + dir * 0.18;
-      this.mouthO.target = 0;
-      this.mouthCrescent.target = 0.35;
-      this.mouthD.target =
-        this.faceStyle === FACE_STYLE.ANGRY
-          ? 0.62
-          : 0;
-      this.setMouthRotationTarget(dir * 4.5);
-      duration = 380 + this.rand() * 260;
-    } else if (id === "MOUTH_O") {
-      this.mouthX.target = 0;
-      this.mouthY.target = -0.28;
-      this.mouthScaleX.target = -0.16;
-      this.mouthScaleY.target = 0.08;
-      this.mouthCurve.target = 0;
-      this.mouthO.target = 1;
-      this.mouthD.target = 0;
-      this.mouthCrescent.target = 0;
-      this.setMouthRotationTarget(0);
-      duration = 820 + this.rand() * 520;
-    } else {
-      this.mouthX.target = 0;
-      this.mouthY.target = 0.3;
-      this.mouthScaleX.target = -0.12;
-      this.mouthScaleY.target = 0.06;
-      this.mouthCurve.target = -1;
-      this.mouthO.target = 0;
-      this.mouthCrescent.target = 0;
-      this.mouthD.target =
-        this.faceStyle === FACE_STYLE.ANGRY
-          ? 0.76
-          : this.faceStyle === FACE_STYLE.HAPPY || this.faceStyle === FACE_STYLE.EXCITED
-            ? 0.56
-            : 0.1;
-      this.setMouthRotationTarget(0);
-      duration = 1100 + this.rand() * 650;
-    }
+  private peakHoldMs(holdMs = 0): number {
+    const extra = INTENSITY_SCALE[this.mindV3.getActingIntensity()].peakHold;
+    return extra + holdMs;
+  }
+
+  private startMouth(id: BehaviourId, holdMs = 0) {
+    if (!isMouthBehaviour(id)) return;
+    const recipe = MOUTH_RECIPES[id];
+    const relax = MOUTH_RECIPES.MOUTH_RELAX;
+    const k = this.plan?.category === "MICRO" ? 0.42 : 1;
+    const mix = (from: number, to: number) => from + (to - from) * k;
+    this.mouthX.target = mix(relax.x, recipe.x);
+    this.mouthY.target = mix(relax.y, recipe.y);
+    this.mouthScaleX.target = mix(relax.scaleX, recipe.scaleX);
+    this.mouthScaleY.target = mix(relax.scaleY, recipe.scaleY);
+    this.mouthCurve.target = mix(relax.curve, recipe.curve);
+    this.mouthO.target = mix(relax.o, recipe.o);
+    this.mouthD.target = mix(relax.d, recipe.d);
+    this.mouthCrescent.target = mix(relax.crescent, recipe.crescent);
+    this.mouthTongue.target = mix(0, recipe.tongue);
+    this.setMouthRotationTarget(mix(relax.rotation, recipe.rotation));
+    const duration = recipe.durationMs;
     this.mouthAction = id;
-    this.mouthReleaseAt = this.clock + duration;
+    this.mouthReleaseAt = this.clock + duration + this.peakHoldMs(holdMs);
     this.mark(id, duration + 300);
   }
 
@@ -2465,8 +2784,8 @@ export class BehaviourController {
   }
 
   private startBody(id: BehaviourId, cfg: BehaviourConfig) {
-    if (id === "SPIN_360") {
-      this.startSpin();
+    if (isAcrobatBehaviour(id)) {
+      this.startAcrobat(id);
       return;
     }
     if (id === "WALL_IMPACT_LEFT" || id === "WALL_IMPACT_RIGHT") {
@@ -2803,8 +3122,7 @@ export class BehaviourController {
   private startSpecial(id: SpecialBehaviour, cfg: BehaviourConfig) {
     this.clearBeatCues();
     this.clearBodyTargets();
-    this.spinStartedAt = -1;
-    this.spinRotation = 0;
+    this.clearAcrobat();
     this.impactAt = 0;
     this.specialAction = id;
     this.specialDirection = id === "VANISH_REAPPEAR" && this.rand() < 0.5 ? -1 : 1;
@@ -2973,15 +3291,45 @@ export class BehaviourController {
     this.massOriginYTarget = 0.82;
   }
 
+  private clearAcrobat() {
+    this.acrobat = null;
+    // Finish or abort the current turn without rewinding through the face.
+    this.performanceYaw = settleTurnAngle(this.performanceYaw);
+    this.performancePitch = settleTurnAngle(this.performancePitch);
+    this.performanceRoll = settleTurnAngle(this.performanceRoll);
+  }
+
   private startSpin() {
+    this.startAcrobat("SPIN_360");
+  }
+
+  /**
+   * Every big rotational move owns exactly one PerformanceOrientation path.
+   * No action below rotates the final canvas; all mass and face projection is
+   * handled by the same Facing × Performance matrix in the cloud renderer.
+   */
+  private startAcrobat(id: AcrobatBehaviour) {
     this.clearBeatCues();
     this.clearBodyTargets();
-    this.spinStartedAt = this.clock;
-    this.spinRotation = 0;
-    this.bodyAction = "SPIN_360";
-    this.bodyReleaseAt = this.clock + 2350;
-    this.mark("SPIN_360", 2350);
-    this.nextBeatAt = Math.max(this.nextBeatAt, this.clock + 2700);
+    const duration =
+      id === "SPIN_360"
+        ? 2200
+        : id === "BACKFLIP" || id === "FRONTFLIP"
+          ? 1720
+          : 1840;
+    // Keep the current full-turn rest pose (0/360/720…) and author +360 from it.
+    // Zeroing here made jelly unwrap a second spin backwards through the face.
+    const baseYaw = nearestEquivalentAngle(0, this.performanceYaw);
+    const basePitch = nearestEquivalentAngle(0, this.performancePitch);
+    const baseRoll = nearestEquivalentAngle(0, this.performanceRoll);
+    this.performanceYaw = baseYaw;
+    this.performancePitch = basePitch;
+    this.performanceRoll = baseRoll;
+    this.acrobat = { id, startedAt: this.clock, duration, baseYaw, basePitch, baseRoll };
+    this.bodyAction = id;
+    this.bodyReleaseAt = this.clock + duration + 720;
+    this.mark(id, duration + 720);
+    this.nextBeatAt = Math.max(this.nextBeatAt, this.clock + duration + 980);
   }
 
   private startWallImpact(
@@ -3007,36 +3355,112 @@ export class BehaviourController {
     this.mark(id, 1500);
   }
 
-  private updateSpin() {
-    if (this.spinStartedAt < 0) return;
-    const elapsed = this.clock - this.spinStartedAt;
-    const duration = 1900;
-    const t = clamp01(elapsed / duration);
-    // One unwrapped turn. At 360 degrees the orientation is identical to
-    // neutral, so clearing to zero after completion does not snap visually.
-    this.spinRotation = 360 * smoothstep(t);
-    const wobbleEnvelope = Math.sin(Math.PI * t);
-    const wobble = Math.sin(t * Math.PI * 4.2) * wobbleEnvelope;
-    const bob = Math.sin(t * Math.PI * 1.8) * wobbleEnvelope;
-    this.localBodyX = wobble * 6;
-    this.localBodyY = bob * 3;
-    this.localBodyRotation = wobble * 3.4;
-    this.localBodyScaleY = (-0.035 + bob * 0.018) * wobbleEnvelope;
-    this.massXTarget = wobble * 6.6;
-    this.massYTarget = bob * 3.5;
-    this.massRotationTarget = wobble * 5.8;
-    this.massScaleYTarget = -0.036 * wobbleEnvelope;
-    this.massSkewXTarget = -wobble * 4.8;
-    this.massSkewYTarget = wobble * 4.4;
+  private updateAcrobat() {
+    const acrobat = this.acrobat;
+    if (!acrobat) return;
+
+    const t = clamp01((this.clock - acrobat.startedAt) / acrobat.duration);
+    const anticipationEnd = 0.16;
+    const actionEnd = 0.82;
+    const actionT = clamp01((t - anticipationEnd) / (actionEnd - anticipationEnd));
+    const action = smoothstep(actionT);
+    const launch = smoothstep(clamp01(t / anticipationEnd));
+    const landing = smoothstep(clamp01((t - actionEnd) / (1 - actionEnd)));
+    const airborne = Math.sin(Math.PI * actionT);
+    const direction =
+      acrobat.id === "CARTWHEEL_LEFT" ? -1 : 1;
+    const { baseYaw, basePitch, baseRoll } = acrobat;
+
+    this.performanceYaw = baseYaw;
+    this.performancePitch = basePitch;
+    this.performanceRoll = baseRoll;
+    this.localBodyX = 0;
+    this.localBodyY = 0;
+    this.localBodyRotation = 0;
+    this.localBodyScaleY = 0;
+    this.massXTarget = 0;
+    this.massYTarget = 0;
+    this.massRotationTarget = 0;
+    this.massScaleYTarget = 0;
+    this.massSkewXTarget = 0;
+    this.massSkewYTarget = 0;
+
+    if (t < anticipationEnd) {
+      // Crouch, eyes have already moved through the regular gaze system.
+      this.localBodyY = 7.5 * launch;
+      this.localBodyScaleY = -0.115 * launch;
+      this.massYTarget = 4.8 * launch;
+      this.massScaleYTarget = -0.08 * launch;
+      this.massSkewXTarget = acrobat.id.startsWith("CARTWHEEL") ? direction * 1.8 * launch : 0;
+      // Counter-rotate so the launch reads as a wind-up, not a rigid start.
+      if (acrobat.id === "SPIN_360") this.performanceYaw = baseYaw - 16 * launch;
+      else if (acrobat.id === "BACKFLIP") this.performancePitch = basePitch + 14 * launch;
+      else if (acrobat.id === "FRONTFLIP") this.performancePitch = basePitch - 14 * launch;
+      else this.performanceRoll = baseRoll - direction * 12 * launch;
+    } else if (t < actionEnd) {
+      // Genuine flight arc. No finished-image rotation anywhere in this path.
+      this.localBodyY = -58 * airborne;
+      this.localBodyScaleY = 0.05 * airborne;
+      this.massYTarget = -25 * airborne;
+      this.massScaleYTarget = 0.024 * airborne;
+
+      if (acrobat.id === "SPIN_360") {
+        this.performanceYaw = baseYaw - 16 + 376 * action;
+        const wobble = Math.sin(actionT * Math.PI * 3.4) * airborne;
+        this.localBodyX = wobble * 4.2;
+        this.localBodyRotation = wobble * 2.2;
+        this.massXTarget = wobble * 7.4;
+        this.massRotationTarget = wobble * 4.4;
+        this.massSkewXTarget = -wobble * 3.2;
+      } else if (acrobat.id === "BACKFLIP") {
+        this.performancePitch = basePitch + 14 - 374 * action;
+        this.localBodyX = -7 * Math.sin(Math.PI * action);
+        this.massXTarget = -10 * Math.sin(Math.PI * action) * airborne;
+        this.massRotationTarget = -2.5 * Math.sin(Math.PI * action);
+      } else if (acrobat.id === "FRONTFLIP") {
+        this.performancePitch = basePitch - 14 + 374 * action;
+        this.localBodyX = 7 * Math.sin(Math.PI * action);
+        this.massXTarget = 10 * Math.sin(Math.PI * action) * airborne;
+        this.massRotationTarget = 2.5 * Math.sin(Math.PI * action);
+      } else {
+        this.performanceRoll = baseRoll - direction * 12 + direction * 372 * action;
+        // Small yaw prevents the cartwheel reading as an image rotated in 2D.
+        this.performanceYaw = baseYaw + direction * 18 * Math.sin(Math.PI * action);
+        this.localBodyX = direction * 54 * Math.sin(Math.PI * actionT);
+        this.massXTarget = direction * 25 * airborne;
+        this.massRotationTarget = direction * 3.4 * airborne;
+        this.massSkewXTarget = direction * 3.2 * airborne;
+      }
+    } else {
+      if (acrobat.id === "SPIN_360") this.performanceYaw = baseYaw + 360;
+      else if (acrobat.id === "BACKFLIP") this.performancePitch = basePitch - 360;
+      else if (acrobat.id === "FRONTFLIP") this.performancePitch = basePitch + 360;
+      else this.performanceRoll = baseRoll + direction * 360;
+
+      // Landing compression, then a single controlled rebound.
+      const impact = Math.sin(landing * Math.PI);
+      this.localBodyY = 6.2 * (1 - landing) - 3.2 * impact;
+      this.localBodyScaleY = -0.18 * (1 - landing) + 0.05 * impact;
+      this.massYTarget = 7.4 * (1 - landing);
+      this.massScaleYTarget = -0.12 * (1 - landing);
+      if (acrobat.id.startsWith("CARTWHEEL")) {
+        this.localBodyX = direction * 10 * (1 - landing);
+        this.massXTarget = direction * 14 * (1 - landing);
+        this.massSkewXTarget = direction * 2.4 * (1 - landing);
+      }
+    }
+
     if (t >= 1) {
-      this.spinStartedAt = -1;
-      // Keep 360° as the spring's equivalent endpoint. Angle wrapping in
-      // BlobJellyPhysics then returns to zero's visual orientation without
-      // forcing a second backwards turn.
-      this.spinRotation = 360;
+      // Keep full-turn endpoint, visually identical to neutral. This is what
+      // lets physics settle without a +180/-180 or +45/-45 reverse snap.
+      if (acrobat.id === "SPIN_360") this.performanceYaw = baseYaw + 360;
+      else if (acrobat.id === "BACKFLIP") this.performancePitch = basePitch - 360;
+      else if (acrobat.id === "FRONTFLIP") this.performancePitch = basePitch + 360;
+      else this.performanceRoll = baseRoll + direction * 360;
+      this.acrobat = null;
       this.bodyAction = "SETTLING";
       this.clearBodyTargets();
-      this.bodyReleaseAt = this.clock + 850;
+      this.bodyReleaseAt = this.clock + 720;
     }
   }
 
@@ -3133,6 +3557,7 @@ export class BehaviourController {
     this.mouthO.target = 0;
     this.mouthD.target = mood.mouthD;
     this.mouthCrescent.target = mood.mouthCrescent ?? 0;
+    this.mouthTongue.target = 0;
     this.setMouthRotationTarget(mood.mouthRotation);
   }
 
@@ -3189,9 +3614,11 @@ export class BehaviourController {
       this.mouthScaleY.step(dt, 6.6, 0.7);
       this.mouthRotation.step(dt, 5.5, 0.72);
       this.mouthCurve.step(dt, 5.8, 0.72);
-      this.mouthO.step(dt, 6.2, 0.7);
-      this.mouthD.step(dt, 5.8, 0.72);
-      this.mouthCrescent.step(dt, 5.8, 0.72);
+      this.mouthO.step(dt, 8.4, 0.66);
+      this.mouthD.step(dt, 8.2, 0.68);
+      this.mouthCrescent.step(dt, 7.2, 0.7);
+      this.mouthTongue.step(dt, 9.6, 0.62);
+      this.tintAmountSpring.step(dt, 2.4, 0.9);
     }
   }
 
@@ -3221,13 +3648,20 @@ export class BehaviourController {
       -0.2,
       0.2
     );
-    // The manual 360 cue is a full unwrapped yaw around the vertical axis.
-    // It must not also become a 2D canvas roll; that was why Blob lay sideways
-    // in the old recording.
-    this.delta.blobYaw = this.travelYawTarget + this.spinRotation;
-    this.delta.blobPitch = this.travelPitchTarget;
+    // Facing and performance remain separate until the renderer composes
+    // Facing × Performance. Keeping 360° unwrapped here prevents a back-half
+    // sign flip before the orientation matrix sees it.
+    this.delta.blobYaw = this.orientationLab?.yaw ?? this.travelYawTarget;
+    this.delta.blobPitch = this.orientationLab?.pitch ?? this.travelPitchTarget;
+    this.delta.blobPerformanceYaw = this.performanceYaw;
+    this.delta.blobPerformancePitch = this.performancePitch;
+    this.delta.blobPerformanceRoll = this.performanceRoll;
+    // Tiny travel lean only. Lab/full-turn yaw must never become a 2D canvas roll.
+    const canvasLean = this.orientationLab
+      ? 0
+      : Math.max(-3.2, Math.min(3.2, this.worldRotationTarget));
     this.delta.blobRotation =
-      this.worldRotationTarget +
+      canvasLean +
       this.localBodyRotation +
       (followActive ? this.followRotationTarget : 0) +
       prim.rotation;
@@ -3240,14 +3674,27 @@ export class BehaviourController {
     const totalScaleY = scaleY + prim.scaleY + this.posturePuff.value;
     const totalMassScaleY =
       this.massScaleYTarget + prim.massScaleY + this.posturePuff.value * 0.45;
-    this.delta.blobScaleY = totalScaleY;
-    this.delta.blobScaleX = preserveAreaX(totalScaleY);
+    // Inflate / pea-shrink are authored as uniform volume. preserveAreaX on the
+    // extra scaleY channel pinched puff width and hid the demo.
+    const isotropic =
+      this.primitiveId === "INFLATE" ||
+      this.primitiveId === "SHRINK" ||
+      this.primitiveId === "PUFF";
+    if (isotropic) {
+      this.delta.blobScaleY = 0;
+      this.delta.blobScaleX = 0;
+      this.delta.bodyScaleY = 0;
+      this.delta.bodyScaleX = 0;
+    } else {
+      this.delta.blobScaleY = totalScaleY;
+      this.delta.blobScaleX = preserveAreaX(totalScaleY);
+      this.delta.bodyScaleY = totalMassScaleY;
+      this.delta.bodyScaleX = preserveAreaX(totalMassScaleY);
+    }
     this.delta.bodyX = this.massXTarget + prim.massX;
     this.delta.bodyY = this.massYTarget + prim.massY + this.postureLift.value * 0.55;
     this.delta.bodyRotation =
       this.massRotationTarget + prim.massRotation + this.postureLean.value;
-    this.delta.bodyScaleY = totalMassScaleY;
-    this.delta.bodyScaleX = preserveAreaX(totalMassScaleY);
     this.delta.bodySkewX = this.massSkewXTarget + prim.skewX;
     this.delta.bodySkewY = this.massSkewYTarget + prim.skewY;
     this.delta.bodyOriginX = this.massOriginXTarget;
@@ -3288,6 +3735,11 @@ export class BehaviourController {
     this.delta.mouthO = this.mouthO.value;
     this.delta.mouthD = clamp(this.mouthD.value, 0, 1);
     this.delta.mouthCrescent = clamp(this.mouthCrescent.value, 0, 1);
+    this.delta.mouthTongue = clamp(this.mouthTongue.value, 0, 1);
+    this.delta.emotionTintR = this.tintRValue;
+    this.delta.emotionTintG = this.tintGValue;
+    this.delta.emotionTintB = this.tintBValue;
+    this.delta.tintAmount = clamp(this.tintAmountSpring.value, 0, 1);
     return this.delta;
   }
 

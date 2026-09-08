@@ -23,6 +23,36 @@ import {
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
+/** Smooth 1→0 falloff. 1 at the origin, 0 at `radius`. */
+function smoothFalloff(dist: number, radius: number) {
+  if (radius <= 1e-3) return dist <= 0 ? 1 : 0;
+  const t = clamp(dist / radius, 0, 1);
+  return 1 - t * t * (3 - 2 * t);
+}
+
+/** Gaussian used for local grab dent. Cheap, portable, no tables. */
+function gaussianFalloff(dist: number, sigma: number) {
+  const s = Math.max(1, sigma);
+  return Math.exp(-(dist * dist) / (2 * s * s));
+}
+
+/**
+ * Authored acting → local lobe layout. Pancake/stretch already own overall
+ * axes through actingScaleX/Y; this channel only redistributes masses so the
+ * silhouette change is not a global oval. Does not double-amplify axes.
+ */
+export function actingLobeLayout(
+  actingX = 1,
+  actingY = 1,
+  actingPuff = 0,
+): { squash: number; stretch: number; puff: number } {
+  return {
+    squash: clamp((actingX - actingY) * 0.92, 0, 0.8),
+    stretch: clamp((actingY - actingX) * 0.92, 0, 0.75),
+    puff: clamp(actingPuff, 0, 1),
+  };
+}
+
 export const DEFAULT_DEFORMATION: CloudDeformationParams = {
   scale: 1,
   scaleX: 1,
@@ -48,8 +78,6 @@ export const DEFAULT_DEFORMATION: CloudDeformationParams = {
   cloudBrows: false,
   gazeX: 0,
   gazeY: 0,
-  turnYaw: 0,
-  turnPitch: 0,
 };
 
 export const DEFAULT_MOTION_CONFIG: CloudMotionConfig = {
@@ -384,8 +412,18 @@ export function computeLobeTarget(
   targetRotation: number;
 } {
   const puff = params.puff;
-  const squash = clamp(params.squash, 0, 0.75);
-  const stretch = clamp(params.stretch, 0, 0.65);
+  const sliderSquash = clamp(params.squash, 0, 0.75);
+  const sliderStretch = clamp(params.stretch, 0, 0.65);
+  const layout = actingLobeLayout(
+    params.actingScaleX ?? 1,
+    params.actingScaleY ?? 1,
+    params.actingPuff ?? 0,
+  );
+  // Position offsets come from slider emotes AND authored acting. Axis scale
+  // from pancake/stretch is applied later via actingScale, so layout squash
+  // must not also pinch sx/sy or the pose double-amplifies.
+  const squash = clamp(sliderSquash + layout.squash, 0, 0.85);
+  const stretch = clamp(sliderStretch + layout.stretch, 0, 0.75);
   const lean = params.lean;
 
   let tx = def.baseX;
@@ -400,31 +438,31 @@ export function computeLobeTarget(
   // 2. Squash & Stretch
   if (squash > 0) {
     if (def.id === "topCrown") {
-      ty += squash * 24; // Dome compresses downwards
+      ty += squash * 38;
     } else if (def.id === "baseLeft") {
-      tx -= squash * 18; // Base spreads outwards
-      ty += squash * 8;
+      tx -= squash * 28;
+      ty += squash * 12;
     } else if (def.id === "baseRight") {
-      tx += squash * 18;
-      ty += squash * 8;
+      tx += squash * 28;
+      ty += squash * 12;
     } else if (def.id === "bottomBelly") {
-      ty += squash * 12; // Belly presses into ground
+      ty += squash * 18;
     } else if (def.id === "leftCheek" || def.id === "rightCheek") {
-      tx += (def.id === "leftCheek" ? -1 : 1) * squash * 12;
-      ty += squash * 10;
+      tx += (def.id === "leftCheek" ? -1 : 1) * squash * 18;
+      ty += squash * 14;
     }
   }
 
   if (stretch > 0) {
     if (def.id === "topCrown") {
-      ty -= stretch * 18; // Dome shoots upward
+      ty -= stretch * 28;
     } else if (def.id === "bottomBelly") {
-      ty -= stretch * 10; // Belly lifts
-    } else if (def.id === "baseLeft" || def.id === "baseRight") {
-      tx *= 1 + stretch * 0.04; // Narrows horizontally
-    } else if (def.id === "leftCheek" || def.id === "rightCheek") {
-      tx *= 1 + stretch * 0.03;
       ty -= stretch * 16;
+    } else if (def.id === "baseLeft" || def.id === "baseRight") {
+      tx *= 1 + stretch * 0.06;
+    } else if (def.id === "leftCheek" || def.id === "rightCheek") {
+      tx *= 1 + stretch * 0.05;
+      ty -= stretch * 22;
     }
   }
 
@@ -464,36 +502,7 @@ export function computeLobeTarget(
     tx += wobbleDist;
   }
 
-  // 6. DIRECTIONAL TURNING SILHOUETTE MORPHING (Pseudo-3D volumetric rotation)
-  const turnYaw = params.shellYaw ?? params.turnYaw ?? 0;
-  const turnPitch = params.shellPitch ?? params.turnPitch ?? 0;
-  const yawRatio = clamp(turnYaw / 28, -1, 1);
-  const pitchRatio = clamp(turnPitch / 18, -1, 1);
-
-  if (Math.abs(yawRatio) > 0.01 || Math.abs(pitchRatio) > 0.01) {
-    if (def.id === "topCrown") {
-      // Top crown mass leans dynamically into motion
-      tx += yawRatio * 20;
-      ty += pitchRatio * 10;
-    } else if (def.id === "leftCheek") {
-      // Left cheek leads and shifts left when turning left; tucks in when turning right
-      tx += yawRatio < 0 ? yawRatio * 14 : yawRatio * 18;
-      ty += pitchRatio * 6;
-    } else if (def.id === "rightCheek") {
-      // Right cheek leads and shifts right when turning right; tucks in when turning left
-      tx += yawRatio > 0 ? yawRatio * 14 : yawRatio * 18;
-      ty += pitchRatio * 6;
-    } else if (def.id === "bottomBelly") {
-      tx -= yawRatio * 8;
-      ty += pitchRatio * 10;
-    } else if (def.id === "baseLeft") {
-      tx += yawRatio < 0 ? yawRatio * 8 : yawRatio * 12;
-    } else if (def.id === "baseRight") {
-      tx += yawRatio > 0 ? yawRatio * 8 : yawRatio * 12;
-    }
-  }
-
-  // 7. CRITICAL LOBE LAG HIERARCHY & DIRECTIONAL AIRFLOW DEFORMATION:
+  // 6. CRITICAL LOBE LAG HIERARCHY & DIRECTIONAL AIRFLOW DEFORMATION:
   // Face leads -> core maintains chunky structural presence (lag 0.05, low stretch) -> crown & cheeks follow -> rear base & belly trail along motion wake
   // Asymmetric directional lag: front leading lobes have reduced lag; rear trailing lobes drag along wake
   const isLeadingX = (characterVx > 10 && def.baseX > 8) || (characterVx < -10 && def.baseX < -8);
@@ -502,8 +511,8 @@ export function computeLobeTarget(
   const isTrailingY = (characterVy > 10 && def.baseY < -12) || (characterVy < -10 && def.baseY > 12);
 
   let directionalLagMod = 1.0;
-  if (isLeadingX || isLeadingY) directionalLagMod *= 0.55;
-  if (isTrailingX || isTrailingY) directionalLagMod *= 1.35;
+  if (isLeadingX || isLeadingY) directionalLagMod *= 0.48;
+  if (isTrailingX || isTrailingY) directionalLagMod *= 1.48;
 
   const lagStrength = def.lagFactor * motion.lobeLag * 0.09 * directionalLagMod;
   const maxLobeOffset = def.radiusX * 0.26;
@@ -512,7 +521,7 @@ export function computeLobeTarget(
   tx -= Math.max(-maxLobeOffset, Math.min(maxLobeOffset, rawLagX));
   ty -= Math.max(-maxLobeOffset, Math.min(maxLobeOffset, rawLagY));
 
-  // 8. Scale computation with core shape protection and directional airflow
+  // 7. Scale computation with core shape protection and directional airflow
   const speed = Math.hypot(characterVx, characterVy);
   const nvx = speed > 1e-2 ? characterVx / speed : 0;
   const nvy = speed > 1e-2 ? characterVy / speed : 0;
@@ -527,55 +536,13 @@ export function computeLobeTarget(
   const squashFactor = isCore ? 0.22 : (def.depth < 0 ? 1.25 : 0.8);
   const stretchFactor = isCore ? 0.22 : (def.depth < 0 ? 0.5 : 0.65);
 
-  if (squash > 0) {
-    sx *= 1 + squash * 0.3 * squashFactor;
-    sy *= 1 - squash * 0.24 * squashFactor;
+  if (sliderSquash > 0) {
+    sx *= 1 + sliderSquash * 0.3 * squashFactor;
+    sy *= 1 - sliderSquash * 0.24 * squashFactor;
   }
-  if (stretch > 0) {
-    sx *= 1 - stretch * 0.2 * stretchFactor;
-    sy *= 1 + stretch * 0.36 * stretchFactor;
-  }
-
-  // Directional silhouette volume modulation:
-  // Leading side becomes fuller and firmer; trailing rear side compresses and recedes
-  if (!isCore) {
-    if (def.id === "leftCheek") {
-      if (yawRatio < -0.05) {
-        // Leading left side becomes fuller (+18% volume swell)
-        sx *= 1 + Math.abs(yawRatio) * 0.18;
-        sy *= 1 + Math.abs(yawRatio) * 0.08;
-      } else if (yawRatio > 0.05) {
-        // Trailing side tucks and compresses (-22%)
-        sx *= 1 - Math.abs(yawRatio) * 0.10;
-        sy *= 1 - Math.abs(yawRatio) * 0.10;
-      }
-    } else if (def.id === "rightCheek") {
-      if (yawRatio > 0.05) {
-        // Leading right side becomes fuller (+18% volume swell)
-        sx *= 1 + Math.abs(yawRatio) * 0.18;
-        sy *= 1 + Math.abs(yawRatio) * 0.08;
-      } else if (yawRatio < -0.05) {
-        // Trailing side tucks and compresses (-22%)
-        sx *= 1 - Math.abs(yawRatio) * 0.10;
-        sy *= 1 - Math.abs(yawRatio) * 0.10;
-      }
-    } else if (def.id === "baseLeft") {
-      sx *= yawRatio < 0 ? 1 + Math.abs(yawRatio) * 0.10 : 1 - Math.abs(yawRatio) * 0.06;
-    } else if (def.id === "baseRight") {
-      sx *= yawRatio > 0 ? 1 + Math.abs(yawRatio) * 0.10 : 1 - Math.abs(yawRatio) * 0.06;
-    } else if (def.id === "topCrown") {
-      if (pitchRatio < -0.05) {
-        sy *= 1 + Math.abs(pitchRatio) * 0.14;
-      } else if (pitchRatio > 0.05) {
-        sy *= 1 - Math.abs(pitchRatio) * 0.10;
-      }
-    } else if (def.id === "bottomBelly") {
-      if (pitchRatio > 0.05) {
-        sy *= 1 + Math.abs(pitchRatio) * 0.14;
-      } else if (pitchRatio < -0.05) {
-        sy *= 1 - Math.abs(pitchRatio) * 0.12;
-      }
-    }
+  if (sliderStretch > 0) {
+    sx *= 1 - sliderStretch * 0.2 * stretchFactor;
+    sy *= 1 + sliderStretch * 0.36 * stretchFactor;
   }
 
   // Aerodynamic motion reaction:
@@ -594,11 +561,11 @@ export function computeLobeTarget(
     }
   }
 
-  // Local radial contact and grab squish. Pressure moves mass out of the normal and into
-  // the tangent, with a protected front cradle, contact-side local dent, and volume redistribution.
+  // Local radial contact and grab squish. The dent originates at the actual
+  // contact point, not as a whole-body oval: nearby mass compresses, neighbours
+  // bulge, the far side keeps its volume. Same path handles walls and corners.
   const wallPress = clamp(params.contactPressure ?? 0, 0, 1);
   const grabPress = clamp(params.grabPressure ?? 0, -0.2, 1.4);
-  const pressure = clamp(Math.max(wallPress, grabPress * 0.92), 0, 1);
 
   const angle = (params.rotation * Math.PI) / 180;
   const cos = Math.cos(angle),
@@ -609,6 +576,8 @@ export function computeLobeTarget(
     ny = wy * cos - wx * sin;
 
   const contactDist = params.contactDistance ?? 999;
+  const grabX = params.contactRelX ?? nx * (contactDist < 800 ? contactDist : 0);
+  const grabY = params.contactRelY ?? ny * (contactDist < 800 ? contactDist : 0);
   const isCenterPress = grabPress > 0.05 && contactDist < 28;
 
   // Core resistance: 0.38 for tactile grab (dense soft cloud rather than solid rock)
@@ -650,63 +619,134 @@ export function computeLobeTarget(
       sx *= 1 + 0.10 * grabPress * resistance;
     }
   } else if (grabPress > 0.05) {
-    // Directional off-center press (14-20px local contact dent, tangent puff):
+    // Finger-local dent: radial falloff from the actual contact point, blended
+    // with side-facing so a cheek grab stays on that cheek.
+    const dx = def.baseX - grabX;
+    const dy = def.baseY - grabY;
+    const dist = Math.hypot(dx, dy);
+    const radius = params.influenceRadius ?? 58;
+    const radial = gaussianFalloff(dist, radius * 0.82);
+    const ring = smoothFalloff(dist, radius * 1.2) * (1 - radial);
+
     const projection = def.baseX * nx + def.baseY * ny;
     const tangent = -def.baseX * ny + def.baseY * nx;
     const facingContact = clamp(0.5 + projection / 110, 0, 1);
+    const contactWeight = clamp(radial * 0.62 + facingContact * 0.55, 0, 1.2);
 
-    // Contact-side lobe indentation gives visibly under finger pressure (14-20px local displacement).
-    // Only the touched side moves inward; the far side remains anchored or bulges outward.
-    const contactIndent = facingContact > 0.35 ? (facingContact - 0.35) / 0.65 : 0;
+    const contactIndent = contactWeight > 0.35 ? (contactWeight - 0.35) / 0.65 : 0;
     const localDisplacement = contactIndent * 18 * grabPress * resistance;
-
     tx -= nx * localDisplacement;
     ty -= ny * localDisplacement;
 
-    // Mass redistribution along tangent:
-    const tangentSign = tangent >= 0 ? 1 : -1;
-    const tangentPush = clamp(Math.abs(tangent) / 75, 0, 1) * 8 * grabPress * resistance;
-    tx += (-ny * tangentSign) * tangentPush;
-    ty += (nx * tangentSign) * tangentPush;
-
-    // Opposite side volume bulge:
-    if (facingContact < 0.35) {
-      const oppositeBulge = (0.35 - facingContact) / 0.35;
-      tx += nx * (oppositeBulge * 5 * grabPress * resistance);
-      ty += ny * (oppositeBulge * 5 * grabPress * resistance);
+    // Neighbouring mass (upper/lower on the same side) puffs slightly outward.
+    if (ring > 0.04 && facingContact > 0.18 && facingContact < 0.88) {
+      const lobeR = Math.hypot(def.baseX, def.baseY);
+      if (lobeR > 1) {
+        tx += (def.baseX / lobeR) * ring * 7 * grabPress * resistance;
+        ty += (def.baseY / lobeR) * ring * 7 * grabPress * resistance;
+        sx *= 1 + ring * 0.08 * grabPress * resistance;
+        sy *= 1 + ring * 0.05 * grabPress * resistance;
+      }
     }
 
-    // Axis scaling: compression along contact normal, expansion along tangent
-    const compression = (0.12 + facingContact * 0.22) * grabPress * resistance;
-    const expansion = (0.10 + (1 - facingContact) * 0.12) * grabPress * resistance;
+    // Mass redistribution along tangent (crown/belly on a cheek squeeze).
+    const tangentSign = tangent >= 0 ? 1 : -1;
+    const tangentPush = clamp(Math.abs(tangent) / 75, 0, 1) * 8 * grabPress * resistance;
+    tx += -ny * tangentSign * tangentPush;
+    ty += nx * tangentSign * tangentPush;
 
+    // Far side keeps volume; only a tiny opposite bulge so he doesn't look hollow.
+    if (facingContact < 0.35 && radial < 0.22) {
+      const oppositeBulge = (0.35 - facingContact) / 0.35;
+      tx += nx * (oppositeBulge * 4.2 * grabPress * resistance);
+      ty += ny * (oppositeBulge * 4.2 * grabPress * resistance);
+    }
+
+    // Core drifts slightly away from the finger.
+    if (def.id === "core") {
+      tx -= nx * 3.2 * grabPress;
+      ty -= ny * 3.2 * grabPress;
+    }
+
+    const compression = (0.12 + contactWeight * 0.20) * grabPress * resistance;
+    const expansion = (0.10 + (1 - facingContact) * 0.12) * grabPress * resistance;
     sx *= 1 - compression * nx * nx + expansion * ny * ny;
     sy *= 1 - compression * ny * ny + expansion * nx * nx;
 
-    dentInfluence = facingContact > 0.5 ? clamp((facingContact - 0.5) * 2 * grabPress, 0, 1) : 0;
+    // Contact region reaches toward the pointer; far lobes stay with the lagged core.
+    const pullX = params.gripPullX ?? 0;
+    const pullY = params.gripPullY ?? 0;
+    tx += pullX * radial;
+    ty += pullY * radial;
+
+    dentInfluence = contactWeight > 0.5 ? clamp((contactWeight - 0.5) * 2 * grabPress, 0, 1) : 0;
   } else if (wallPress > 0.005) {
-    // Wall contact against circular AMOLED bezel (preserves baseline wall behavior)
+    // Wall / corner contact against the round AMOLED bezel.
     const projection = def.baseX * nx + def.baseY * ny;
     const tangent = -def.baseX * ny + def.baseY * nx;
     const facingContact = clamp(0.5 + projection / 135, 0, 1);
+    const cornerBlend = clamp(params.cornerBlend ?? 0, 0, 1);
+    const resist = isCore ? 0.16 : 1;
 
-    const compression = wallPress * facingContact * 0.26 * (isCore ? 0.16 : 1);
-    const expansion = wallPress * (0.09 + (1 - facingContact) * 0.12) * (isCore ? 0.16 : 1);
+    // Combined two-axis flatten: compress along the radial normal, send volume
+    // into the free quadrant. Never independently pancake X then Y.
+    const compression =
+      wallPress * facingContact * 0.26 * (1 - cornerBlend * 0.24) * resist;
+    const expansion =
+      wallPress * (0.09 + (1 - facingContact) * 0.12) * (1 + cornerBlend * 0.2) * resist;
 
     const indentBase = 8 + facingContact * 18;
-    tx -= nx * wallPress * indentBase * (isCore ? 0.16 : 1);
-    ty -= ny * wallPress * indentBase * (isCore ? 0.16 : 1);
-    tx -= ny * tangent * wallPress * 0.11 * (isCore ? 0.16 : 1);
-    ty += nx * tangent * wallPress * 0.11 * (isCore ? 0.16 : 1);
+    tx -= nx * wallPress * indentBase * resist;
+    ty -= ny * wallPress * indentBase * resist;
+    tx -= ny * tangent * wallPress * 0.11 * resist;
+    ty += nx * tangent * wallPress * 0.11 * resist;
+
+    if (cornerBlend > 0.12) {
+      const free = 1 - facingContact;
+      tx -= nx * wallPress * cornerBlend * 9 * resist * free;
+      ty -= ny * wallPress * cornerBlend * 9 * resist * free;
+    }
 
     sx *= 1 - compression * nx * nx + expansion * ny * ny;
     sy *= 1 - compression * ny * ny + expansion * nx * nx;
   }
 
+  // Travel stretch after a flick: elongate along velocity, keep area.
+  const flick = params.flickStretch ?? 0;
+  if (flick > 0.004) {
+    const vx = params.velocityX ?? 0;
+    const vy = params.velocityY ?? 0;
+    const spd = Math.hypot(vx, vy);
+    if (spd > 1) {
+      const nvx = vx / spd;
+      const nvy = vy / spd;
+      const along = isCore ? 0.45 : 1;
+      sx *= 1 + flick * (nvx * nvx - nvy * nvy * 0.45) * along;
+      sy *= 1 + flick * (nvy * nvy - nvx * nvx * 0.45) * along;
+    }
+  }
+
+  // Direction change: near side (into the yank) compresses, far side stretches.
+  const ax = params.accelX ?? 0;
+  const ay = params.accelY ?? 0;
+  const accel = Math.hypot(ax, ay);
+  if (accel > 500 && !isCore) {
+    const lead = (def.baseX * ax + def.baseY * ay) / (accel * 90);
+    if (lead > 0.25) {
+      const k = clamp(lead, 0, 1) * 0.045;
+      sx *= 1 - k;
+      sy *= 1 - k * 0.7;
+    } else if (lead < -0.25) {
+      const k = clamp(-lead, 0, 1) * 0.035;
+      sx *= 1 + k * 0.7;
+      sy *= 1 + k;
+    }
+  }
+
   // Preserve character-level volume without undoing intentional contact dent.
   const restArea = breathScale * breathScale * (1 + puff * 0.3) ** 2;
   const areaCorrection = Math.sqrt(
-    clamp(restArea / Math.max(0.1, sx * sy), 0.86, 1.22)
+    clamp(restArea / Math.max(0.1, sx * sy), 0.88, 1.18)
   );
   // Pressed lobe is allowed to lose local projected area; volume preservation happens across the character
   const localAreaCorrection = 1 + (areaCorrection - 1) * (1 - dentInfluence * 0.82);
@@ -727,6 +767,30 @@ export function computeLobeTarget(
       : 0.82;
   sx = clamp(sx, minScaleX, 1.38);
   sy = clamp(sy, minScaleY, 1.38);
+
+  // Authored shape is distinct from material/contact protection. Applying it
+  // after the neutral-core clamp preserves its magnitude instead of silently
+  // clamping a pancake back to 93% height. Each mass carries different weight.
+  const actingX = params.actingScaleX ?? 1;
+  const actingY = params.actingScaleY ?? 1;
+  const crown = def.id === "topCrown";
+  const lower = def.depth < 0 || def.id === "bottomBelly";
+  const shapeWeight = crown ? 1.08 : lower ? 0.92 : 1;
+  const localX = 1 + (actingX - 1) * (lower ? 1.08 : crown ? 0.92 : 1);
+  const localY = 1 + (actingY - 1) * shapeWeight;
+  tx *= localX;
+  ty = 35 + (ty - 35) * localY;
+  sx *= localX;
+  sy *= localY;
+  const actedPuff = params.actingPuff ?? 0;
+  tx *= 1 + actedPuff * (lower ? 0.24 : 0.12);
+  ty -= actedPuff * (crown ? 22 : isCore ? 6 : 0);
+  if (actedPuff > 0.01) {
+    if (def.id === "leftCheek") tx -= actedPuff * 18;
+    else if (def.id === "rightCheek") tx += actedPuff * 18;
+    else if (def.id === "baseLeft") tx -= actedPuff * 12;
+    else if (def.id === "baseRight") tx += actedPuff * 12;
+  }
 
   const rot = (lean * 0.38 * (1 - def.lagFactor * 0.45) * Math.PI) / 180;
 
@@ -806,8 +870,16 @@ export function stepLobePhysics(
       state.vy += fy * h;
       state.y += state.vy * h;
     }
-    // Smooth relaxation: rate constant 24 for swift tactile follow-through (<40ms)
-    const rate = 1 - Math.exp(-24 * clampedDt);
+    // Per-lobe recovery: core is snappy, crown a little springy, rear shelf last.
+    const scaleHz =
+      def.id === "core"
+        ? 26
+        : def.id === "topCrown"
+          ? 15
+          : def.depth < 0
+            ? 10
+            : 19;
+    const rate = 1 - Math.exp(-scaleHz * clampedDt);
     state.scaleX += (targetScaleX - state.scaleX) * rate;
     state.scaleY += (targetScaleY - state.scaleY) * rate;
     state.opacity += (targetOpacity - state.opacity) * rate;
@@ -823,8 +895,8 @@ export function stepLobePhysics(
       const s = lobeStates[def.id];
       if (!s) continue;
 
-      const maxDistX = Math.abs(def.baseX) + def.radiusX * 0.28;
-      const maxDistY = Math.abs(def.baseY) + def.radiusY * 0.28;
+      const maxDistX = (Math.abs(def.baseX) + def.radiusX * 0.28) * Math.max(1, params.actingScaleX ?? 1);
+      const maxDistY = (Math.abs(def.baseY) + def.radiusY * 0.28) * Math.max(1, params.actingScaleY ?? 1);
 
       const dx = s.x - coreState.x;
       const dy = s.y - coreState.y;

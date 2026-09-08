@@ -54,6 +54,10 @@ export interface CloudDeformationParams {
   rotation: number;
   x: number;
   y: number;
+  /** Acting shape composes after material/contact limits, locally per lobe. */
+  actingScaleX?: number;
+  actingScaleY?: number;
+  actingPuff?: number;
   squash: number;
   stretch: number;
   lean: number;
@@ -79,17 +83,32 @@ export interface CloudDeformationParams {
   faceShiftX?: number;
   faceShiftY?: number;
   contactDistance?: number;
-  shellYaw?: number;
-  shellPitch?: number;
-  /** Legacy aliases. The orientation renderer reads facing/performance below. */
-  turnYaw?: number;
-  turnPitch?: number;
+  /** Grab point in character-local 466-space, origin at the core. */
+  contactRelX?: number;
+  contactRelY?: number;
+  /** Smooth radial influence of the local dent, in pixels. */
+  influenceRadius?: number;
+  /** Body-centre lag behind the gripped contact, in pixels. */
+  gripPullX?: number;
+  gripPullY?: number;
+  /** Instantaneous body velocity, 466-space px/s. */
+  velocityX?: number;
+  velocityY?: number;
+  accelX?: number;
+  accelY?: number;
+  /** 0 on-axis wall, 1 at a 45° corner of the round bezel. */
+  cornerBlend?: number;
+  /** Interaction-only face yaw/pitch; renderer must not invent body heading. */
+  dragFaceYaw?: number;
+  dragFacePitch?: number;
+  flickStretch?: number;
   /** Mind-owned orientation, unwrapped when a performance crosses 180°. */
   facingYaw?: number;
   facingPitch?: number;
   performanceYaw?: number;
   performancePitch?: number;
   performanceRoll?: number;
+  /** Secondary delayed copies. Renderer-only follow-through; never authored heading. */
   coreFacingYaw?: number;
   coreFacingPitch?: number;
   corePerformanceYaw?: number;
@@ -110,8 +129,6 @@ export interface CloudDeformationParams {
   massPerformanceYaw?: number;
   massPerformancePitch?: number;
   massPerformanceRoll?: number;
-  dragFaceYaw?: number;
-  dragFacePitch?: number;
 }
 
 export interface CloudMotionConfig {

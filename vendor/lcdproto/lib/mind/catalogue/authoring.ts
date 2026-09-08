@@ -70,6 +70,14 @@ export interface StoryInput {
   facing?: FacingIntent;
   holdFacing?: boolean;
   beats: StoryBeat[];
+  signature?: boolean;
+  silhouette?: string;
+  mouthFamily?: string;
+  actingTags?: readonly string[];
+  tintR?: number;
+  tintG?: number;
+  tintB?: number;
+  tintAmount?: number;
 }
 
 export function story(input: StoryInput): StoryDef {
@@ -96,6 +104,14 @@ export function story(input: StoryInput): StoryDef {
     returnPolicy: input.returnPolicy,
     facing: input.facing,
     holdFacing: input.holdFacing,
+    signature: input.signature,
+    silhouette: input.silhouette,
+    mouthFamily: input.mouthFamily,
+    actingTags: input.actingTags,
+    tintR: input.tintR,
+    tintG: input.tintG,
+    tintB: input.tintB,
+    tintAmount: input.tintAmount,
   };
 }
 

@@ -1,9 +1,14 @@
 /**
  * Pointer grab, wall resistance and jelly shake.
  *
- * Everything here is scalar: four springs, a soft radial limit and a small set
- * of derived deformation values. No mesh, no filters, no per-frame allocation
+ * Everything here is scalar: springs, a soft radial limit and a small set of
+ * derived deformation values. No mesh, no filters, no per-frame allocation
  * and no Math.random — the same maths runs unchanged on the ESP32.
+ *
+ * Ownership:
+ *   Interaction (this file) → temporary physical override / impulse
+ *   Physics (blobPhysics + lobe springs) → deformation and inertia
+ *   Mind / Behaviour → intended pose, restored after release
  *
  * The controller only produces offsets and deformation deltas. HomeState feeds
  * those into the existing jelly target, so drag inherits the body lag, squash
@@ -24,6 +29,12 @@ const PRESSURE_TRAVEL_RATIO = 0.28;
 /** Pointer jerk, in px/s^2-ish units, above which a shake registers. */
 const SHAKE_THRESHOLD = 900;
 const SHAKE_RANGE = 5200;
+/** Release carry, in 466-space px/s. Fast flicks stay lively without teleporting. */
+const MAX_RELEASE_SPEED = 760;
+/** Radial influence of a local grab dent, in 466-space pixels. */
+const INFLUENCE_RADIUS = 58;
+/** Diagonal |nx| and |ny| above this reads as a corner, not a single wall. */
+const CORNER_AXIS = 0.38;
 
 class Spring {
   value = 0;
@@ -82,6 +93,28 @@ export interface DragPose {
   /** Subtle surface-following face offset in pixels (~1-4px). */
   faceShiftX: number;
   faceShiftY: number;
+  /**
+   * How far the lagged body centre trails the pointer target.
+   * Applied as a local stretch so the contact region stays under the finger
+   * while the core and far lobes follow behind.
+   */
+  gripPullX: number;
+  gripPullY: number;
+  velocityX: number;
+  velocityY: number;
+  accelX: number;
+  accelY: number;
+  /** Smooth radial influence of the current grab dent. */
+  influenceRadius: number;
+  /** Interaction-only face yaw/pitch, degrees. Does not author body heading. */
+  faceYaw: number;
+  facePitch: number;
+  /** 0 on-axis wall, 1 at a 45° corner of the round bezel. */
+  cornerBlend: number;
+  wallNormalX: number;
+  wallNormalY: number;
+  /** Stretch along travel after a flick, 0–~0.12. */
+  flickStretch: number;
 }
 
 export class BlobDragController {
@@ -90,6 +123,11 @@ export class BlobDragController {
   private readonly wobbleX = new Spring();
   private readonly wobbleY = new Spring();
   private readonly grabPressureSpring = new Spring();
+  private readonly faceLagX = new Spring();
+  private readonly faceLagY = new Spring();
+  private readonly faceYaw = new Spring();
+  private readonly facePitch = new Spring();
+  private readonly stretchSpring = new Spring();
   private grabSquishMultiplier = 1.0;
   private grabbed = false;
   /** Pointer target for Blob's centre, relative to the screen centre. */
@@ -109,6 +147,8 @@ export class BlobDragController {
   private lastPointerAt = 0;
   private lastVelocityX = 0;
   private lastVelocityY = 0;
+  private lastAccelX = 0;
+  private lastAccelY = 0;
   private lastNormalX = 1;
   private lastNormalY = 0;
   private shakeEnergy = 0;
@@ -136,6 +176,19 @@ export class BlobDragController {
     tangentExpansion: 0,
     faceShiftX: 0,
     faceShiftY: 0,
+    gripPullX: 0,
+    gripPullY: 0,
+    velocityX: 0,
+    velocityY: 0,
+    accelX: 0,
+    accelY: 0,
+    influenceRadius: INFLUENCE_RADIUS,
+    faceYaw: 0,
+    facePitch: 0,
+    cornerBlend: 0,
+    wallNormalX: 0,
+    wallNormalY: 0,
+    flickStretch: 0,
   };
 
   reset() {
@@ -144,6 +197,11 @@ export class BlobDragController {
     this.wobbleX.reset();
     this.wobbleY.reset();
     this.grabPressureSpring.reset();
+    this.faceLagX.reset();
+    this.faceLagY.reset();
+    this.faceYaw.reset();
+    this.facePitch.reset();
+    this.stretchSpring.reset();
     this.grabbed = false;
     this.targetX = 0;
     this.targetY = 0;
@@ -157,6 +215,8 @@ export class BlobDragController {
     this.contactAngle = 0;
     this.lastVelocityX = 0;
     this.lastVelocityY = 0;
+    this.lastAccelX = 0;
+    this.lastAccelY = 0;
     this.lastNormalX = 1;
     this.lastNormalY = 0;
     this.shakeEnergy = 0;
@@ -206,6 +266,8 @@ export class BlobDragController {
     this.lastPointerAt = now;
     this.lastVelocityX = 0;
     this.lastVelocityY = 0;
+    this.lastAccelX = 0;
+    this.lastAccelY = 0;
 
     // Contact vector relative to Cherri's center:
     if (contactRelX !== undefined && contactRelY !== undefined) {
@@ -254,6 +316,8 @@ export class BlobDragController {
     const velocityY = (pointerY - this.lastPointerY) / dt;
     const jerkX = velocityX - this.lastVelocityX;
     const jerkY = velocityY - this.lastVelocityY;
+    this.lastAccelX = jerkX / dt;
+    this.lastAccelY = jerkY / dt;
     const jerk = Math.hypot(jerkX, jerkY);
     if (jerk > SHAKE_THRESHOLD) {
       // A direction reversal is what reads as "shaking". Feed that reversal
@@ -274,6 +338,21 @@ export class BlobDragController {
   /** Release keeps the current spring velocity, so Blob rebounds and settles. */
   end() {
     this.grabbed = false;
+    const speed = Math.hypot(this.posX.velocity, this.posY.velocity);
+    if (speed > MAX_RELEASE_SPEED) {
+      const scale = MAX_RELEASE_SPEED / speed;
+      this.posX.velocity *= scale;
+      this.posY.velocity *= scale;
+    }
+    const pointerSpeed = Math.hypot(this.lastVelocityX, this.lastVelocityY);
+    if (pointerSpeed > MAX_RELEASE_SPEED) {
+      const scale = MAX_RELEASE_SPEED / pointerSpeed;
+      this.lastVelocityX *= scale;
+      this.lastVelocityY *= scale;
+    }
+    this._pose.grabbed = false;
+    this._pose.velocityX = this.posX.velocity;
+    this._pose.velocityY = this.posY.velocity;
   }
 
   /**
@@ -311,7 +390,8 @@ export class BlobDragController {
 
     // Resolve pointer request against a circular boundary. The direction is
     // the radial wall normal, so left, right, top, bottom and every diagonal
-    // use the exact same collision path.
+    // use the exact same collision path. Diagonals still expose both axes via
+    // cornerBlend so lobes can flatten on two contact sides at once.
     let targetX = 0;
     let targetY = 0;
     let pullPressure = 0;
@@ -352,16 +432,18 @@ export class BlobDragController {
       const dt = seconds / steps;
       for (let i = 0; i < steps; i += 1) {
         if (this.grabbed) {
-          // Held: a heavy, liquid follow rather than a rigid cursor lock.
-          this.posX.step(targetX, dt, 3.2, 0.74);
-          this.posY.step(targetY, dt, 3.2, 0.74);
+          // Held: the contact is grippy, the body centre is heavy.
+          // Cloud is a bit more viscous than Blob so the mass trails the finger.
+          this.posX.step(targetX, dt, cloud ? 2.55 : 3.05, cloud ? 0.82 : 0.74);
+          this.posY.step(targetY, dt, cloud ? 2.55 : 3.05, cloud ? 0.82 : 0.74);
           // Grab pressure rise: frequency 6.4Hz, damping 0.46 (~65-80ms rise with 115-125% impulse overshoot, settling by ~180ms)
           this.grabPressureSpring.step(1.0 * this.grabSquishMultiplier, dt, 6.4, 0.46);
         } else {
           // Released: momentum is preserved, so he carries on, overshoots his
-          // resting place once, and settles.
-          this.posX.step(0, dt, cloud ? 1.35 : 1.55, cloud ? 0.78 : 0.44);
-          this.posY.step(0, dt, cloud ? 1.35 : 1.55, cloud ? 0.78 : 0.44);
+          // resting place once, and settles. Cloud is tuned for one visible
+          // rebound (~140ms) then a quiet secondary settle under ~600ms.
+          this.posX.step(0, dt, cloud ? 1.48 : 1.55, cloud ? 0.66 : 0.44);
+          this.posY.step(0, dt, cloud ? 1.48 : 1.55, cloud ? 0.66 : 0.44);
           // Grab pressure release: frequency 2.7Hz, damping 0.60 (~100-140ms rebound pop-back past neutral, ~350ms settle)
           this.grabPressureSpring.step(0, dt, 2.7, 0.60);
         }
@@ -381,8 +463,11 @@ export class BlobDragController {
             this.posY.value = ny * boundary - baseY;
             const outwardVelocity = this.posX.velocity * nx + this.posY.velocity * ny;
             if (outwardVelocity > 0) {
-              this.posX.velocity -= nx * outwardVelocity;
-              this.posY.velocity -= ny * outwardVelocity;
+              // Bounce a fraction of the impact back in, then kill the rest.
+              // Gives a soft wall rebound instead of sliding along the glass.
+              const restitution = this.grabbed ? 0 : cloud ? 0.22 : 0.18;
+              this.posX.velocity -= nx * outwardVelocity * (1 + restitution);
+              this.posY.velocity -= ny * outwardVelocity * (1 + restitution);
             }
           } else {
             this.posX.value = 0;
@@ -391,6 +476,27 @@ export class BlobDragController {
         }
         this.wobbleX.step(0, dt, 3.4, cloud ? 0.8 : 0.3);
         this.wobbleY.step(0, dt, 3.6, cloud ? 0.8 : 0.32);
+
+        const bodyVx = this.posX.velocity;
+        const bodyVy = this.posY.velocity;
+        // Face trails the body a little; never enough to leave the surface.
+        this.faceLagX.step(-bodyVx * 0.012, dt, 4.2, 0.78);
+        this.faceLagY.step(-bodyVy * 0.01, dt, 4.0, 0.8);
+        const yawTarget = this.grabbed
+          ? clamp(bodyVx * 0.011 + this.lastVelocityX * 0.004, -7.5, 7.5)
+          : 0;
+        const pitchTarget = this.grabbed
+          ? clamp(bodyVy * 0.008 + this.lastVelocityY * 0.003, -5, 5)
+          : 0;
+        this.faceYaw.step(yawTarget, dt, 2.9, 0.8);
+        this.facePitch.step(pitchTarget, dt, 2.7, 0.82);
+
+        const travel = Math.hypot(bodyVx, bodyVy);
+        const stretchTarget =
+          !this.grabbed && travel > 90
+            ? clamp((travel - 90) / 1400, 0, 0.11)
+            : 0;
+        this.stretchSpring.step(stretchTarget, dt, 3.6, 0.72);
       }
       this.grabPressureSpring.value = clamp(
         this.grabPressureSpring.value,
@@ -449,8 +555,22 @@ export class BlobDragController {
     const wallWeight = clamp(pressure * 1.6, 0, 1);
     const grabWeight = 1 - wallWeight;
 
-    const wallCompression = MAX_NORMAL_COMPRESSION * pressure + this.shakeEnergy * 0.035;
-    const wallExpansion = MAX_TANGENT_EXPANSION * pressure + this.shakeEnergy * 0.055;
+    // Diagonal contact on the round bezel is a corner: both axis components
+    // are live. Combined squash is reduced so X*Y never collapses into a
+    // tiny rectangle; volume is sent toward the free quadrant instead.
+    const absNx = Math.abs(normalX_wall);
+    const absNy = Math.abs(normalY_wall);
+    const cornerBlend =
+      pressure > 0.05 && absNx > CORNER_AXIS && absNy > CORNER_AXIS
+        ? clamp((Math.min(absNx, absNy) - CORNER_AXIS) / (0.707 - CORNER_AXIS), 0, 1)
+        : 0;
+
+    const wallCompression =
+      (MAX_NORMAL_COMPRESSION * pressure + this.shakeEnergy * 0.035) *
+      (1 - cornerBlend * 0.28);
+    const wallExpansion =
+      (MAX_TANGENT_EXPANSION * pressure + this.shakeEnergy * 0.055) *
+      (1 + cornerBlend * 0.16);
 
     const combinedCompression = Math.max(
       wallCompression,
@@ -465,9 +585,12 @@ export class BlobDragController {
     let normalX = normalX_wall;
     let normalY = normalY_wall;
     let deformAngle = 90;
+    const flickStretch = this.stretchSpring.value;
+    const bodySpeed = Math.hypot(this.posX.velocity, this.posY.velocity);
 
     if (pressure > 0.08) {
-      // Wall contact dominates
+      // Wall contact dominates — including corners, whose normal is already
+      // the combination of both contact axes.
       const tangentAngle = Math.atan2(normalY, normalX) + Math.PI / 2;
       deformAngle = (tangentAngle * 180) / Math.PI;
     } else if (activeGrabPress > 0.01 && !isCenterPress) {
@@ -476,6 +599,8 @@ export class BlobDragController {
       normalY = this.contactNormalY;
       const tangentAngle = Math.atan2(normalY, normalX) + Math.PI / 2;
       deformAngle = (tangentAngle * 180) / Math.PI;
+    } else if (flickStretch > 0.01 && bodySpeed > 40) {
+      deformAngle = (Math.atan2(this.posY.velocity, this.posX.velocity) * 180) / Math.PI;
     } else {
       // Center press: symmetrical compression
       normalX = 0;
@@ -486,15 +611,27 @@ export class BlobDragController {
     while (deformAngle > 90) deformAngle -= 180;
     while (deformAngle < -90) deformAngle += 180;
 
-    // Face shift: surface follows inward compression by ~3-7px
+    // Face shift: surface follows inward compression by ~3-7px, plus a tiny
+    // lag so the face trails the body instead of being welded to the cursor.
     const faceShiftAmount = activeGrabPress * 5.8 * Math.min(1.2, 0.25 + relRadius * 0.95);
-    const faceShiftX = -this.contactNormalX * faceShiftAmount;
-    const faceShiftY = -this.contactNormalY * faceShiftAmount;
+    const faceShiftX = clamp(
+      -this.contactNormalX * faceShiftAmount + this.faceLagX.value,
+      -10,
+      10
+    );
+    const faceShiftY = clamp(
+      -this.contactNormalY * faceShiftAmount + this.faceLagY.value,
+      -10,
+      10
+    );
+
+    const gripPullX = this.grabbed ? targetX - x : 0;
+    const gripPullY = this.grabbed ? targetY - y : 0;
 
     this._pose.scaleX = 0;
     this._pose.scaleY = 0;
-    this._pose.bodyScaleX = clamp(combinedExpansion, 0, 0.44);
-    this._pose.bodyScaleY = clamp(-combinedCompression, -0.38, 0);
+    this._pose.bodyScaleX = clamp(combinedExpansion + flickStretch, 0, 0.44);
+    this._pose.bodyScaleY = clamp(-combinedCompression - flickStretch * 0.55, -0.38, 0.08);
     this._pose.deformAngle = deformAngle;
     this._pose.rotation = clamp(
       pressure * 5.2 * normalX * normalY +
@@ -520,6 +657,19 @@ export class BlobDragController {
     this._pose.tangentExpansion = combinedExpansion;
     this._pose.faceShiftX = faceShiftX;
     this._pose.faceShiftY = faceShiftY;
+    this._pose.gripPullX = clamp(gripPullX, -28, 28);
+    this._pose.gripPullY = clamp(gripPullY, -28, 28);
+    this._pose.velocityX = this.posX.velocity;
+    this._pose.velocityY = this.posY.velocity;
+    this._pose.accelX = this.lastAccelX;
+    this._pose.accelY = this.lastAccelY;
+    this._pose.influenceRadius = INFLUENCE_RADIUS;
+    this._pose.faceYaw = clamp(this.faceYaw.value, -8, 8);
+    this._pose.facePitch = clamp(this.facePitch.value, -6, 6);
+    this._pose.cornerBlend = cornerBlend;
+    this._pose.wallNormalX = normalX_wall;
+    this._pose.wallNormalY = normalY_wall;
+    this._pose.flickStretch = flickStretch;
     return this._pose;
   }
 }

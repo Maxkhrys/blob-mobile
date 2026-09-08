@@ -32,7 +32,10 @@ const html = mod.exports.buildCloudHtml({
   },
   active: true,
 });
-assert.match(html, /MotionPreviewPlayer/);
+assert.doesNotMatch(html, /MotionPreviewPlayer/);
+assert.match(html, /DEMO_60S_ADORABILITY/);
+assert.match(html, /playDeveloperAction/);
+assert.match(html, /applyCloudFacing/);
 let callbacks = [];
 let frames = 0;
 const events = {};

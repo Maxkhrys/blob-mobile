@@ -126,6 +126,12 @@ export function isEligible(def: StoryDef, ctx: ScoringContext): boolean {
   ) {
     return false;
   }
+  if (def.silhouette && ctx.memory.silhouetteRecent(def.silhouette, 3)) return false;
+  if (def.mouthFamily && ctx.memory.mouthFamilyRecent(def.mouthFamily, 1)) return false;
+  if (ctx.memory.storyRecency(def.id) === 0) return false;
+  if (ctx.memory.storyRecency(def.id) >= 0 && ctx.memory.storyRecency(def.id) < 4 && def.signature) {
+    return false;
+  }
   return true;
 }
 
@@ -229,6 +235,9 @@ export function scoreStory(def: StoryDef, ctx: ScoringContext): CandidateScore {
   const destinationRecency = ctx.memory.destinationRecency(def.destination);
   if (destinationRecency >= 0 && destinationRecency < 2 && dest !== "CENTER") {
     penalty += 0.25;
+  }
+  if (def.mouthFamily && ctx.memory.mouthFamilyRecent(def.mouthFamily, 2)) {
+    penalty += 0.55;
   }
 
   // Rarity "due" bonus. Once a tier's global gate has expired, its stories

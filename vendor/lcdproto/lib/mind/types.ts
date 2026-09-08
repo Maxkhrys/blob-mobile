@@ -235,10 +235,10 @@ export const RARITY_WEIGHT: Record<Rarity, number> = {
  * authored, per-story cooldowns alone would still fire one every few seconds.
  */
 export const RARITY_COOLDOWN_MS: Record<Rarity, number> = {
-  COMMON: 6_000,
-  UNCOMMON: 20_000,
-  RARE: 90_000,
-  SPECIAL: 240_000,
+  COMMON: 3_000,
+  UNCOMMON: 8_000,
+  RARE: 18_000,
+  SPECIAL: 42_000,
 };
 
 export type PerformancePhase =
@@ -333,6 +333,17 @@ export type PerformanceStrengthTier =
   | "BIG"
   | "SPECIAL";
 
+export type ActingCycle =
+  | "NATURAL"
+  | "CUTE"
+  | "FUNNY"
+  | "HYPER"
+  | "SLEEPY"
+  | "MISCHIEF"
+  | "SHOWCASE";
+
+export type ActingIntensity = "SUBTLE" | "NORMAL" | "EXPRESSIVE";
+
 export type FacingIntent =
   | "FORWARD"
   | "LOOK_LEFT"
@@ -383,6 +394,8 @@ export interface StoryBeat {
   returnPolicy?: ReturnPolicy;
   facing?: FacingIntent;
   holdFacing?: boolean;
+  /** Extra peak hold after this beat's face/mouth land, milliseconds. */
+  holdMs?: number;
 }
 
 /** Conditions a story needs before it is even considered. */
@@ -429,6 +442,18 @@ export interface StoryDef {
   returnPolicy?: ReturnPolicy;
   facing?: FacingIntent;
   holdFacing?: boolean;
+  /** Clip-worthy beats the director spaces on a 15–40s cadence. */
+  signature?: boolean;
+  /** Distinct body silhouette id used by anti-repeat. */
+  silhouette?: string;
+  /** Mouth family used by anti-repeat. */
+  mouthFamily?: string;
+  actingTags?: readonly string[];
+  /** Subtle temporary body tint, 0..1 amount. */
+  tintR?: number;
+  tintG?: number;
+  tintB?: number;
+  tintAmount?: number;
 }
 
 /* -------------------------------------------------------------- primitives */
@@ -457,7 +482,10 @@ export type PrimitiveId =
   | "SLUMP"
   | "STRETCH_UP"
   | "SQUISH"
-  | "PULSE";
+  | "PULSE"
+  | "INFLATE"
+  | "FLATTEN"
+  | "GIGGLE";
 
 export const PRIMITIVE_IDS: readonly PrimitiveId[] = [
   "HOP",
@@ -484,6 +512,9 @@ export const PRIMITIVE_IDS: readonly PrimitiveId[] = [
   "STRETCH_UP",
   "SQUISH",
   "PULSE",
+  "INFLATE",
+  "FLATTEN",
+  "GIGGLE",
 ] as const;
 
 /* ------------------------------------------------------------------- plans */
@@ -508,6 +539,7 @@ export interface MindCue {
   returnPolicy?: ReturnPolicy;
   facing?: FacingIntent;
   holdFacing?: boolean;
+  holdMs?: number;
 }
 
 export interface MindPlan {
@@ -528,6 +560,13 @@ export interface MindPlan {
   toZone: BlobDestination;
   facing?: FacingIntent;
   holdFacing?: boolean;
+  signature?: boolean;
+  silhouette?: string;
+  mouthFamily?: string;
+  tintR?: number;
+  tintG?: number;
+  tintB?: number;
+  tintAmount?: number;
 }
 
 /* --------------------------------------------------------- high-level AI IO */
@@ -624,4 +663,8 @@ export interface MindTelemetry {
   worldY: number;
   yawSource: YawSource;
   facingIntent: FacingIntent;
+  actingCycle: string;
+  actingIntensity: string;
+  nextSignatureMs: number;
+  openingDone: boolean;
 }

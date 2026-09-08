@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { BODY_FRACTION, type BlobRig } from "@/lib/blobRig";
+import { composeOrientation, rotateVec3 } from "@/lib/orientation";
 import type {
   EnvironmentConfig,
   EnvironmentStatus,
@@ -314,9 +315,18 @@ export default function EnvironmentLayer({
       const bodyDeformX = currentRig.body.scaleX - 1;
       // 1. Core-driven spatial placement (ignore decorative outer wisps/billows)
       const depthScale = clamp(1 + currentRig.blob.depth * 0.28, 0.84, 1.16);
-      // Turning alone must not swing the footprint about: subtle footprint modulation only (<=5%)
-      const shadowYawMod =
-        0.95 + Math.abs(Math.cos((currentRig.blob.yaw * Math.PI) / 180)) * 0.05;
+      const orientationMatrix = composeOrientation(
+        { yaw: currentRig.blob.yaw, pitch: currentRig.blob.pitch },
+        {
+          yaw: currentRig.blob.performanceYaw ?? 0,
+          pitch: currentRig.blob.performancePitch ?? 0,
+          roll: currentRig.blob.performanceRoll ?? 0,
+        },
+      );
+      const underside = rotateVec3(orientationMatrix, { x: 0, y: 76, z: -68 });
+      const down = rotateVec3(orientationMatrix, { x: 0, y: 1, z: 0 });
+      const grounded = clamp(down.y, 0, 1);
+      const shadowYawMod = 0.62 + 0.38 * grounded;
       const wholeScaleX =
         currentRig.blob.scale * depthScale * shadowYawMod * currentRig.blob.scaleX;
       const wholeScaleY =
@@ -324,7 +334,10 @@ export default function EnvironmentLayer({
 
       // Subtle lateral ground displacement and spring lag from character lean
       const leanOffset = (currentRig.body.skewX || 0) * 0.28 * wholeScaleX;
-      const footX = currentRig.blob.x + (currentRig.body.x + leanOffset) * wholeScaleX;
+      const footX =
+        currentRig.blob.x +
+        (currentRig.body.x + leanOffset) * wholeScaleX +
+        underside.x * 0.42 * wholeScaleX;
       const horizontalSpeed = previousFoot.current === null || delta <= 0 ? 0
         : Math.abs(footX - previousFoot.current) / (delta / 1000);
       previousFoot.current = footX;
@@ -349,7 +362,15 @@ export default function EnvironmentLayer({
 
       // Filtered vertical altitude signal for height scale/opacity
       const altitudeSignal = clamp(hoverRatio, 0.35, 2.2);
-      shadowX.current.step(footX, dt, 2.05 - active.shadowLag / 260, 0.72);
+      const wallPress = clamp(currentRig.body.contactPressure ?? 0, 0, 1);
+      // Sideways drag: a little extra lag so the shadow has weight.
+      // Wall contact: snap it back under the body so it never detaches.
+      const lagBoost = wallPress > 0.12 ? 0 : clamp(horizontalSpeed / 420, 0, 0.55);
+      const followHz = wallPress > 0.12
+        ? 3.4
+        : Math.max(1.55, 2.05 - active.shadowLag / 260 - lagBoost * 0.35);
+      const followDamp = wallPress > 0.12 ? 0.88 : 0.72;
+      shadowX.current.step(footX, dt, followHz, followDamp);
       shadowY.current.step(targetFloorY - CENTRE, dt, 2.1 - active.shadowLag / 280, 0.75);
       shadowHeight.current.step(altitudeSignal, dt, 2.25 - active.shadowLag / 300, 0.76);
       const height = clamp(shadowHeight.current.value, 0.3, 2.0);

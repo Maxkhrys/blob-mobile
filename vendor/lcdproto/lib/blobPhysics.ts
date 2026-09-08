@@ -6,14 +6,20 @@
  * browser-only effect is involved: just five position/velocity pairs.
  */
 
+import { nearestEquivalentAngle } from "./orientation";
+
 export interface JellyTarget {
   x: number;
   y: number;
   /** Normalised distance from the screen plane; positive is nearer. */
   depth: number;
-  /** Presentation-space turn axes, in degrees. */
+  /** Mind-owned facing orientation, in degrees. */
   yaw: number;
   pitch: number;
+  /** Authored acrobatic orientation composed after facing. */
+  performanceYaw: number;
+  performancePitch: number;
+  performanceRoll: number;
   rotation: number;
   scaleX: number;
   scaleY: number;
@@ -74,6 +80,9 @@ export class BlobJellyPhysics {
   private readonly depth = new DampedAxis();
   private readonly yaw = new DampedAxis();
   private readonly pitch = new DampedAxis();
+  private readonly performanceYaw = new DampedAxis();
+  private readonly performancePitch = new DampedAxis();
+  private readonly performanceRoll = new DampedAxis();
   private readonly rotation = new DampedAxis();
   private readonly scaleX = new DampedAxis();
   private readonly scaleY = new DampedAxis();
@@ -99,6 +108,9 @@ export class BlobJellyPhysics {
     depth: 0,
     yaw: 0,
     pitch: 0,
+    performanceYaw: 0,
+    performancePitch: 0,
+    performanceRoll: 0,
     rotation: 0,
     scaleX: 0,
     scaleY: 0,
@@ -127,6 +139,9 @@ export class BlobJellyPhysics {
     this.depth.reset();
     this.yaw.reset();
     this.pitch.reset();
+    this.performanceYaw.reset();
+    this.performancePitch.reset();
+    this.performanceRoll.reset();
     this.rotation.reset();
     this.scaleX.reset();
     this.scaleY.reset();
@@ -152,6 +167,9 @@ export class BlobJellyPhysics {
       depth: 0,
       yaw: 0,
       pitch: 0,
+      performanceYaw: 0,
+      performancePitch: 0,
+      performanceRoll: 0,
       rotation: 0,
       scaleX: 0,
       scaleY: 0,
@@ -191,10 +209,25 @@ export class BlobJellyPhysics {
         // Angles repeat every 360°. Choose equivalent target so finishing a
         // full turn settles at 360°/0° instead of unwinding through another
         // visible rotation.
-        const yawTarget =
-          target.yaw + Math.round((this.yaw.value - target.yaw) / 360) * 360;
+        const yawTarget = nearestEquivalentAngle(target.yaw, this.yaw.value);
         this.yaw.step(yawTarget, dt, 2.35, 0.68);
-        this.pitch.step(target.pitch, dt, 1.8, 0.66);
+        const pitchTarget = nearestEquivalentAngle(target.pitch, this.pitch.value);
+        this.pitch.step(pitchTarget, dt, 1.8, 0.66);
+        const performanceYawTarget = nearestEquivalentAngle(
+          target.performanceYaw,
+          this.performanceYaw.value,
+        );
+        const performancePitchTarget = nearestEquivalentAngle(
+          target.performancePitch,
+          this.performancePitch.value,
+        );
+        const performanceRollTarget = nearestEquivalentAngle(
+          target.performanceRoll,
+          this.performanceRoll.value,
+        );
+        this.performanceYaw.step(performanceYawTarget, dt, cloud ? 4.4 : 3.4, 0.74);
+        this.performancePitch.step(performancePitchTarget, dt, cloud ? 4.2 : 3.2, 0.74);
+        this.performanceRoll.step(performanceRollTarget, dt, cloud ? 4.2 : 3.2, 0.74);
         this.rotation.step(target.rotation, dt, 2.5, 0.6);
         this.scaleX.step(target.scaleX, dt, 3.05, 0.48);
         this.scaleY.step(target.scaleY, dt, 3.05, 0.48);
@@ -291,7 +324,12 @@ export class BlobJellyPhysics {
     // This is still capped tightly: one visible wave, then decay.
     const rippleAmount = Math.max(0, Math.min(2, target.rippleAmount));
     const motionSpeed = Math.hypot(motionX, motionY);
-    const turnSpeed = Math.abs(this.yaw.velocity) * 0.08;
+    const turnSpeed =
+      (Math.abs(this.yaw.velocity) +
+        Math.abs(this.performanceYaw.velocity) +
+        Math.abs(this.performancePitch.velocity) +
+        Math.abs(this.performanceRoll.velocity)) *
+      0.08;
     const previousSpeed = Math.hypot(
       this.previousMotionX,
       this.previousMotionY
@@ -351,6 +389,9 @@ export class BlobJellyPhysics {
     this.pose.depth = this.depth.value;
     this.pose.yaw = this.yaw.value;
     this.pose.pitch = this.pitch.value;
+    this.pose.performanceYaw = this.performanceYaw.value;
+    this.pose.performancePitch = this.performancePitch.value;
+    this.pose.performanceRoll = this.performanceRoll.value;
     this.pose.rotation = this.rotation.value;
     this.pose.scaleX = this.scaleX.value + dynamicX;
     this.pose.scaleY = this.scaleY.value + dynamicY;
@@ -369,7 +410,11 @@ export class BlobJellyPhysics {
     this.pose.bodySpeed = Math.hypot(
       this.x.velocity + this.bodyX.velocity,
       this.y.velocity + this.bodyY.velocity
-    ) + Math.abs(this.depth.velocity) * 70 + Math.abs(this.yaw.velocity) * 0.08;
+    ) + Math.abs(this.depth.velocity) * 70 +
+      (Math.abs(this.yaw.velocity) +
+        Math.abs(this.performanceYaw.velocity) +
+        Math.abs(this.performancePitch.velocity) +
+        Math.abs(this.performanceRoll.velocity)) * 0.08;
     this.pose.rippleTop = Math.max(
       -3.2,
       Math.min(

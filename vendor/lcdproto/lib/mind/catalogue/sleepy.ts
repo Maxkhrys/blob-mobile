@@ -16,9 +16,9 @@ export const SLEEPY_STORIES: StoryDef[] = [
     emotion: { arousal: 0.18 },
     beats: [
       b("NOTICE", 0, { expression: "SLEEPY_EYES" }),
-      b("ANTICIPATION", 160, { primitive: "STRETCH_UP", amount: 0.5 }),
-      b("ACTION", 380, { body: "SLEEPY_YAWN", mouth: "MOUTH_O" }),
-      b("REACTION", 2_100, { blink: true }),
+      b("ANTICIPATION", 160, { primitive: "STRETCH_UP", amount: 0.5, mouth: "SMALL_O" }),
+      b("ACTION", 380, { body: "SLEEPY_YAWN", mouth: "YAWN" }),
+      b("REACTION", 2_100, { blink: true, mouth: "YAWN", holdMs: 200 }),
       b("RECOVERY", 2_800, { primitive: "SLUMP", amount: 0.5, mouth: "MOUTH_RELAX" }),
     ],
     duration: 4_100,

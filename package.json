@@ -50,7 +50,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "build:runtime": "node scripts/build-runtime.cjs"
+    "build:runtime": "node scripts/build-runtime.cjs",
+    "check:parity": "node scripts/check-cherri-parity.cjs"
   },
   "private": true
 }

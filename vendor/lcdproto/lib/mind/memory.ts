@@ -53,6 +53,9 @@ export interface StoryMemoryEntry {
   category: StoryCategory;
   atMs: number;
   destination: string;
+  silhouette?: string;
+  mouthFamily?: string;
+  signature?: boolean;
 }
 
 export interface EventMemoryEntry {
@@ -72,6 +75,9 @@ export class MindMemory {
   private readonly cooldowns = new Map<string, number>();
   private readonly categoryLastAt = new Map<StoryCategory, number>();
   private readonly tierLastAt = new Map<Rarity, number>();
+  private readonly recentSilhouettes: string[] = [];
+  private readonly recentMouthFamilies: string[] = [];
+  lastSignatureAt = -1e9;
   lastInteractionAt = 0;
   lastWallImpactAt = -1e9;
   lastGrabAt = -1e9;
@@ -92,6 +98,9 @@ export class MindMemory {
     this.cooldowns.clear();
     this.categoryLastAt.clear();
     this.tierLastAt.clear();
+    this.recentSilhouettes.length = 0;
+    this.recentMouthFamilies.length = 0;
+    this.lastSignatureAt = -1e9;
     this.lastInteractionAt = 0;
     this.lastWallImpactAt = -1e9;
     this.lastGrabAt = -1e9;
@@ -141,6 +150,31 @@ export class MindMemory {
     this.cooldowns.set(entry.id, cooldownUntil);
     this.categoryLastAt.set(entry.category, entry.atMs);
     this.tierLastAt.set(rarity, entry.atMs);
+    if (entry.silhouette) {
+      this.recentSilhouettes.unshift(entry.silhouette);
+      if (this.recentSilhouettes.length > 4) this.recentSilhouettes.pop();
+    }
+    if (entry.mouthFamily) {
+      this.recentMouthFamilies.unshift(entry.mouthFamily);
+      if (this.recentMouthFamilies.length > 3) this.recentMouthFamilies.pop();
+    }
+    if (entry.signature) this.lastSignatureAt = entry.atMs;
+  }
+
+  silhouetteRecent(id: string, depth = 3): boolean {
+    return this.recentSilhouettes.slice(0, depth).includes(id);
+  }
+
+  mouthFamilyRecent(id: string, depth = 2): boolean {
+    return this.recentMouthFamilies.slice(0, depth).includes(id);
+  }
+
+  msSinceSignature(nowMs: number): number {
+    return nowMs - this.lastSignatureAt;
+  }
+
+  lastSilhouettes(): readonly string[] {
+    return this.recentSilhouettes;
   }
 
   /** How long since any story of this tier played. */

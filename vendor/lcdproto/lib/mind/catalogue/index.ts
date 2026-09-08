@@ -19,6 +19,7 @@ import { SURPRISED_STORIES } from "./surprised";
 import { ANNOYED_STORIES } from "./annoyed";
 import { RARE_STORIES } from "./rare";
 import { INTERACTION_STORIES } from "./interaction";
+import { SIGNATURE_STORIES } from "./signature";
 import type { StoryCategory, StoryDef } from "../types";
 
 export const ALL_STORIES: readonly StoryDef[] = [
@@ -34,6 +35,7 @@ export const ALL_STORIES: readonly StoryDef[] = [
   ...ANNOYED_STORIES,
   ...RARE_STORIES,
   ...INTERACTION_STORIES,
+  ...SIGNATURE_STORIES,
 ];
 
 /** Everything the autonomous director can choose between thoughts. */
@@ -43,6 +45,10 @@ export const PERFORMANCE_STORIES: readonly StoryDef[] = ALL_STORIES.filter(
 
 export const MICRO_LIFE_STORIES: readonly StoryDef[] = ALL_STORIES.filter(
   (def) => def.category === "MICRO"
+);
+
+export const SIGNATURE_LIFE_STORIES: readonly StoryDef[] = ALL_STORIES.filter(
+  (def) => def.signature === true
 );
 
 export const STORY_BY_ID: ReadonlyMap<string, StoryDef> = new Map(
@@ -77,4 +83,5 @@ export {
   ANNOYED_STORIES,
   RARE_STORIES,
   INTERACTION_STORIES,
+  SIGNATURE_STORIES,
 };

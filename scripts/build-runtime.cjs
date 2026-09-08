@@ -31,9 +31,10 @@ const bundle = `var LCD=(function(){var modules={${modules}},cache={};function l
   "lib/blobBehaviour.ts",
   "lib/behaviours/controller.ts",
   "lib/behaviours/primitives.ts",
+  "lib/behaviours/mouths.ts",
   "lib/mind/director.ts",
+  "lib/mind/acting.ts",
   "lib/orientation.ts",
-  "lib/motionPreview.ts",
   "lib/mind/cloudFacing.ts",
   "lib/mind/eventSense.ts",
   "lib/mind/types.ts",
@@ -80,7 +81,7 @@ const config = ts.transpileModule(
     },
   },
 ).outputText;
-const envSource = `var Scene=(function(){const BODY_FRACTION=.535;${helpers}
+const envSource = `var Scene=(function(){const BODY_FRACTION=.535;const composeOrientation=LCD.composeOrientation;const rotateVec3=LCD.rotateVec3;${helpers}
 const shadowX={current:new ScalarSpring()},shadowY={current:new ScalarSpring()},shadowHeight={current:new ScalarSpring()};
 const previousFoot={current:null},cloudRef={current:true};
 const staticCanvas=document.createElement('canvas');staticCanvas.width=staticCanvas.height=466;const staticCtx=staticCanvas.getContext('2d');

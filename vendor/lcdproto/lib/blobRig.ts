@@ -320,6 +320,8 @@ export interface ElementTransform {
   mouthD: number;
   /** Amount of the sharp half-oval / crescent smile. */
   mouthCrescent: number;
+  /** 0..1 tongue, clipped inside the open mouth. */
+  mouthTongue: number;
   /**
    * Wall contact: unit normal toward the contact point, and how hard.
    *
@@ -345,10 +347,16 @@ export interface BlobTransform {
   y: number;
   /** Normalised distance from the LCD plane; positive is closer to camera. */
   depth: number;
-  /** Simple presentation-space turn axes, in degrees. */
+  /** Mind-owned facing orientation, in degrees. */
   yaw: number;
   pitch: number;
+  /** Authored acrobatic orientation layered after facing. */
+  performanceYaw: number;
+  performancePitch: number;
+  performanceRoll: number;
   scale: number;
+  /** Authored volume change, independent of viewport character size. */
+  actingScale?: number;
   /** Non-uniform scale on top of `scale`, for jelly squash and stretch. */
   scaleX: number;
   scaleY: number;
@@ -356,6 +364,11 @@ export interface BlobTransform {
   opacity: number;
   /** Procedural face style metadata; the body asset stays unchanged. */
   faceStyle: number;
+  /** Subtle temporary body tint, mixed in the renderer. */
+  tintR?: number;
+  tintG?: number;
+  tintB?: number;
+  tintAmount?: number;
 }
 
 export interface BlobRig {
@@ -394,6 +407,7 @@ export const NEUTRAL_ELEMENT: ElementTransform = {
   mouthO: 0,
   mouthD: 0,
   mouthCrescent: 0,
+  mouthTongue: 0,
   contactX: 0,
   contactY: 0,
   contactPressure: 0,
@@ -410,6 +424,9 @@ export const NEUTRAL_BLOB: BlobTransform = {
   depth: 0,
   yaw: 0,
   pitch: 0,
+  performanceYaw: 0,
+  performancePitch: 0,
+  performanceRoll: 0,
   scale: 1,
   scaleX: 1,
   scaleY: 1,
