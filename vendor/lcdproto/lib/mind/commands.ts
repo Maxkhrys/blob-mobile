@@ -8,7 +8,7 @@
  */
 
 import type { BlobDestination } from "../blobMind";
-import type { MindEvent, MindEventId, MindIntent, MovementEnergy } from "./types";
+import type { ActingCycle, ActingIntensity, MindEvent, MindEventId, MindIntent, MovementEnergy } from "./types";
 
 export type MindCommand =
   | { kind: "EVENT"; event: MindEvent; nonce: number }
@@ -26,7 +26,9 @@ export type MindCommand =
   | { kind: "MOVEMENT_ENERGY"; energy: MovementEnergy; nonce: number }
   | { kind: "RETURN_CENTER"; nonce: number }
   | { kind: "RESET_SPATIAL"; nonce: number }
-  | { kind: "DEMO_60S"; nonce: number };
+  | { kind: "DEMO_60S"; nonce: number }
+  | { kind: "ACTING_CYCLE"; cycle: ActingCycle; nonce: number }
+  | { kind: "ACTING_INTENSITY"; intensity: ActingIntensity; nonce: number };
 
 export const LAB_ZONES: readonly { id: BlobDestination; label: string }[] = [
   { id: "CENTER", label: "Center" },

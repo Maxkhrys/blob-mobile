@@ -22,6 +22,10 @@ export type BehaviourId =
   | "JELLY_TWIST_LEFT"
   | "JELLY_TWIST_RIGHT"
   | "SPIN_360"
+  | "BACKFLIP"
+  | "FRONTFLIP"
+  | "CARTWHEEL_LEFT"
+  | "CARTWHEEL_RIGHT"
   | "WALL_IMPACT_LEFT"
   | "WALL_IMPACT_RIGHT"
   | "HAPPY_BOUNCE"
@@ -52,6 +56,23 @@ export type BehaviourId =
   | "MOUTH_TWITCH"
   | "MOUTH_O"
   | "MOUTH_FLIP"
+  | "CRESCENT_SHARP"
+  | "D_SMILE"
+  | "OPEN_LAUGH"
+  | "BIG_LAUGH"
+  | "SMIRK"
+  | "POUT"
+  | "GASP"
+  | "SMALL_O"
+  | "BIG_O"
+  | "GRIMACE"
+  | "FLAT"
+  | "NERVOUS"
+  | "BLEP"
+  | "TONGUE_PEEK"
+  | "TONGUE_OUT"
+  | "RASPBERRY"
+  | "YAWN"
   | "SENSED_WORRIED"
   | "SENSED_SURPRISED"
   | "ANGRY_STARE"
@@ -130,7 +151,24 @@ export type MouthBehaviour =
   | "MOUTH_RELAX"
   | "MOUTH_TWITCH"
   | "MOUTH_O"
-  | "MOUTH_FLIP";
+  | "MOUTH_FLIP"
+  | "CRESCENT_SHARP"
+  | "D_SMILE"
+  | "OPEN_LAUGH"
+  | "BIG_LAUGH"
+  | "SMIRK"
+  | "POUT"
+  | "GASP"
+  | "SMALL_O"
+  | "BIG_O"
+  | "GRIMACE"
+  | "FLAT"
+  | "NERVOUS"
+  | "BLEP"
+  | "TONGUE_PEEK"
+  | "TONGUE_OUT"
+  | "RASPBERRY"
+  | "YAWN";
 
 export type BodyBehaviour = Exclude<
   BehaviourId,
@@ -166,9 +204,13 @@ export interface PoseDelta {
   faceStyle: number;
   /** Normalised distance from the panel: positive is closer to the viewer. */
   blobDepth: number;
-  /** Yaw and pitch are presentation-space degrees for the simple 3D turn. */
+  /** Mind-owned facing orientation. */
   blobYaw: number;
   blobPitch: number;
+  /** Performance orientation composed after facing by the cloud renderer. */
+  blobPerformanceYaw: number;
+  blobPerformancePitch: number;
+  blobPerformanceRoll: number;
   blobRotation: number;
   blobSpin: number;
   blobScaleX: number;
@@ -219,6 +261,11 @@ export interface PoseDelta {
   mouthO: number;
   mouthD: number;
   mouthCrescent: number;
+  mouthTongue: number;
+  emotionTintR: number;
+  emotionTintG: number;
+  emotionTintB: number;
+  tintAmount: number;
 }
 
 export const NEUTRAL_DELTA: PoseDelta = {
@@ -230,6 +277,9 @@ export const NEUTRAL_DELTA: PoseDelta = {
   blobDepth: 0,
   blobYaw: 0,
   blobPitch: 0,
+  blobPerformanceYaw: 0,
+  blobPerformancePitch: 0,
+  blobPerformanceRoll: 0,
   blobRotation: 0,
   blobSpin: 0,
   blobScaleX: 0,
@@ -279,6 +329,11 @@ export const NEUTRAL_DELTA: PoseDelta = {
   mouthO: 0,
   mouthD: 0,
   mouthCrescent: 0,
+  mouthTongue: 0,
+  emotionTintR: 255,
+  emotionTintG: 180,
+  emotionTintB: 190,
+  tintAmount: 0,
 };
 
 export const MOOD_LIST: readonly HomeMood[] = [

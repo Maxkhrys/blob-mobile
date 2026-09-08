@@ -7,7 +7,7 @@
  * separate stops the idle animation from reading like unrelated random cues.
  */
 
-import type { BehaviourId, HomeMood } from "./blobBehaviour";
+import type { BehaviourId, HomeMood, MouthBehaviour } from "./blobBehaviour";
 
 export type BlobIntention =
   | "REST"
@@ -71,11 +71,7 @@ type StoryExpression =
   | "LOVE_EYES"
   | "PANIC_EYES"
   | "DEADPAN_EYES";
-type StoryMouth =
-  | "MOUTH_RELAX"
-  | "MOUTH_TWITCH"
-  | "MOUTH_O"
-  | "MOUTH_FLIP";
+type StoryMouth = MouthBehaviour;
 type StoryBody = Exclude<
   BehaviourId,
   | "REST"

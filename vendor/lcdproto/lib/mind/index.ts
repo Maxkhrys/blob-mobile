@@ -1,3 +1,4 @@
+export * from "./acting";
 export * from "./types";
 export * from "./personality";
 export * from "./emotion";

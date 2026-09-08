@@ -65,7 +65,8 @@ export function drawMouthShape(
   oAmount: number,
   dAmount: number,
   crescentOrColour: number | BlobColour = 0,
-  maybeColour?: BlobColour
+  maybeColour?: BlobColour,
+  tongueAmount = 0
 ) {
   const o = clamp(oAmount, 0, 1);
   const d = clamp(dAmount, 0, 1);
@@ -112,7 +113,7 @@ export function drawMouthShape(
       y: top - height * 0.2,
       width: halfWidth * 2 + height * 0.5,
       height: bottom - top + height * 0.4,
-    });
+    }, width, tongueAmount, o, d);
     return;
   }
 
@@ -189,7 +190,36 @@ export function drawMouthShape(
     y: spanTop,
     width: (halfWidth + cornerReach + 2) * 2,
     height: spanBottom - spanTop,
-  });
+  }, width, tongueAmount, o, d);
+}
+
+/**
+ * Tongue is a clipped pink oval. It never leaves the mouth Path2D, so the
+ * same recipe ports to a scanline renderer that only needs an ellipse + mask.
+ */
+function paintTongue(
+  ctx: CanvasRenderingContext2D,
+  path: Path2D,
+  width: number,
+  height: number,
+  tongueAmount: number,
+  o: number,
+  d: number
+) {
+  const tongue = clamp(tongueAmount, 0, 1);
+  if (tongue < 0.02) return;
+  const open = Math.max(o, d, 0.16);
+  if (open < 0.08) return;
+  ctx.save();
+  ctx.clip(path);
+  const tw = width * (0.28 + tongue * 0.4);
+  const th = height * (0.28 + tongue * 0.5);
+  const ty = height * (0.1 + tongue * 0.16);
+  ctx.beginPath();
+  ctx.ellipse(0, ty, tw, th, 0, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(236, 92, 124, ${0.82 + tongue * 0.18})`;
+  ctx.fill();
+  ctx.restore();
 }
 
 /**
@@ -203,7 +233,11 @@ function fillMouth(
   height: number,
   colour: BlobColour,
   midStop: number,
-  bounds: MaskBounds
+  bounds: MaskBounds,
+  width = 0,
+  tongueAmount = 0,
+  o = 0,
+  d = 0
 ) {
   const palette = mouthPalette(colour);
   const surface = (target: CanvasRenderingContext2D) => {
@@ -214,14 +248,16 @@ function fillMouth(
     return gradient;
   };
 
-  const painted = drawSupersampled(ctx, bounds, (target) => {
+  const paint = (target: CanvasRenderingContext2D) => {
     target.fillStyle = surface(target);
     target.fill(path);
-  });
+    paintTongue(target, path, width || height, height, tongueAmount, o, d);
+  };
+
+  const painted = drawSupersampled(ctx, bounds, paint);
   if (painted) return;
 
-  ctx.fillStyle = surface(ctx);
-  ctx.fill(path);
+  paint(ctx);
 }
 
 function mouthPalette(colour: BlobColour) {

@@ -73,5 +73,7 @@ export function compilePerformance(
     movementMode: travels.length ? def.movementMode ?? 'TRAVEL' : 'STAY',
     movementProfile: profile, returnPolicy: returnPolicyOverride ?? def.returnPolicy ?? 'HOLD',
     fromZone, toZone: finalZone, facing: def.facing ?? 'FORWARD', holdFacing: def.holdFacing ?? false,
+    signature: def.signature, silhouette: def.silhouette, mouthFamily: def.mouthFamily,
+    tintR: def.tintR, tintG: def.tintG, tintB: def.tintB, tintAmount: def.tintAmount,
   };
 }

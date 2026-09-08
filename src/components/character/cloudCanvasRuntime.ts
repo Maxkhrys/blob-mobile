@@ -127,7 +127,7 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
     canvas.style.height = "100%";
 
     var controller = new LCD.BehaviourController();
-    var motionPlayer = new LCD.MotionPreviewPlayer();
+    var autoMind = true;
     var ambient = new LCD.AmbientDrift();
     var physics = new LCD.BlobJellyPhysics();
     var drag = new LCD.BlobDragController();
@@ -209,6 +209,34 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       angry: 'ANGRY_FLARE', sad: 'SAD_DOWNCAST'
     };
 
+    function playDeveloperAction(id) {
+      if (!id) return;
+      lastTriggerId = id;
+      if (id === "PLAY_SHOWCASE" || id === "DEMO_60S_ADORABILITY") {
+        if (controller.playStory) controller.playStory("DEMO_60S_ADORABILITY");
+        else if (controller.playAdorabilityDemo) controller.playAdorabilityDemo();
+        return;
+      }
+      if (id === "NEUTRAL") {
+        if (controller.setOrientationLab) controller.setOrientationLab(null);
+        return;
+      }
+      if (id === "TURN_LEFT") {
+        if (controller.setOrientationLab) controller.setOrientationLab({ yaw: -72, pitch: 0 });
+        return;
+      }
+      if (id === "TURN_RIGHT") {
+        if (controller.setOrientationLab) controller.setOrientationLab({ yaw: 72, pitch: 0 });
+        return;
+      }
+      if (id === "SPIN_360" || id === "BACKFLIP" || id === "FRONTFLIP" || id === "CARTWHEEL_LEFT" || id === "CARTWHEEL_RIGHT") {
+        try { controller.trigger(id, behaviourConfig); } catch (e) {}
+        return;
+      }
+      if (controller.playStory && controller.playStory(id)) return;
+      triggerBehaviour(id);
+    }
+
     function triggerBehaviour(id) {
       if (!id) return;
       lastTriggerId = id;
@@ -227,7 +255,6 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
 
     function resetRuntime(full) {
       controller = new LCD.BehaviourController();
-      if (full && motionPlayer) motionPlayer.reset();
       ambient = new LCD.AmbientDrift();
       physics = new LCD.BlobJellyPhysics();
       drag = new LCD.BlobDragController();
@@ -411,9 +438,7 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       var step = dtMs / 1000;
       idleTime += step;
 
-      controller.update(dtMs, behaviourConfig, true);
-      if (motionPlayer) motionPlayer.step(dtMs);
-      var motion = motionPlayer ? motionPlayer.sample() : null;
+      controller.update(dtMs, behaviourConfig, autoMind);
       var d = controller.pose();
       var performanceSample = performanceRunner.update(dtMs);
       var performanceBody = performanceSample.body || {};
@@ -431,23 +456,26 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       var performanceScaleY = (performanceBody.scaleY === undefined ? 1 : performanceBody.scaleY) - 1;
 
       cloudIdleWeight += ((drag.isGrabbed ? 0.25 : 1) - cloudIdleWeight) * (1 - Math.exp(-Math.min(dtMs, 50) / 180));
-      var previewOwns = motion && motion.ownsOrientation;
-      var emoteYaw = previewOwns ? 0 : (d.blobYaw || 0) + normalizedTurn(initialConfig.driverYaw, 28);
-      var emotePitch = previewOwns ? 0 : (d.blobPitch || 0) + normalizedTurn(initialConfig.driverPitch, 18);
+      // Mind yaw is unwrapped and unsclamped. driverYaw is an optional lab offset only.
+      var emoteYaw = (d.blobYaw || 0) + normalizedTurn(initialConfig.driverYaw, 28);
+      var emotePitch = (d.blobPitch || 0) + normalizedTurn(initialConfig.driverPitch, 18);
       var jellyTarget = {
         x: amb.x * ambientScaleX * cloudIdleWeight + (d.blobX || 0) + (performanceBody.x || 0),
         y: amb.y * ambientScaleY * cloudIdleWeight + (d.blobY || 0) + (performanceBody.y || 0),
         depth: (d.blobDepth || 0) + (performanceBody.depth || 0),
         yaw: emoteYaw,
         pitch: emotePitch,
+        performanceYaw: d.blobPerformanceYaw || 0,
+        performancePitch: d.blobPerformancePitch || 0,
+        performanceRoll: d.blobPerformanceRoll || 0,
         rotation: amb.rotation * Math.max(ambientScaleX, ambientScaleY) + (d.blobRotation || 0) + (performanceBody.rotation || 0),
         scaleX: clamp((d.blobScaleX || 0) + amb.squashX * ambientScaleY, -0.1, 0.1),
         scaleY: clamp((d.blobScaleY || 0) + amb.squashY * ambientScaleY, -0.1, 0.1),
         bodyX: d.bodyX || 0,
         bodyY: d.bodyY || 0,
         bodyRotation: d.bodyRotation || 0,
-        bodyScaleX: clamp((d.bodyScaleX || 0) + performanceScaleX, -0.3, 0.3),
-        bodyScaleY: clamp((d.bodyScaleY || 0) + performanceScaleY, -0.3, 0.3),
+        bodyScaleX: clamp((d.bodyScaleX || 0) + performanceScaleX, -0.34, 0.34),
+        bodyScaleY: clamp((d.bodyScaleY || 0) + performanceScaleY, -0.34, 0.34),
         bodySkewX: (d.bodySkewX || 0) + (performanceBody.skewX || 0),
         bodySkewY: (d.bodySkewY || 0) + (performanceBody.skewY || 0),
         bodyOriginX: d.bodyOriginX || 0,
@@ -456,17 +484,7 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
         jellyAmount: LCD.DEFAULT_IDLE.jellyAmount,
         rippleAmount: LCD.DEFAULT_IDLE.rippleAmount,
       };
-
-      if (motion) {
-        jellyTarget.x += motion.bodyX || 0;
-        jellyTarget.y += motion.bodyY || 0;
-        jellyTarget.rotation += motion.bodyRotation || 0;
-        jellyTarget.scaleX = clamp((jellyTarget.scaleX || 0) + (motion.blobScaleX || 0), -0.45, 0.45);
-        jellyTarget.scaleY = clamp((jellyTarget.scaleY || 0) + (motion.blobScaleY || 0), -0.5, 0.4);
-        jellyTarget.bodyScaleY = clamp((jellyTarget.bodyScaleY || 0) + (motion.bodyScaleY || 0), -0.5, 0.4);
-        jellyTarget.bodySkewX += motion.bodySkewX || 0;
-      }
-      var rootScale = clamp((currentParams.scale || 1) * (1 + amb.breath) * (1 + (d.blobScale || 0) + (motion ? motion.blobScale || 0 : 0)), 0.4, 1.55);
+      var rootScale = clamp((currentParams.scale || 1) * (1 + amb.breath) * (1 + (d.blobScale || 0)), 0.4, 1.55);
       var bodyRadius = 180 * rootScale * characterScale
         * (currentParams.scale || 1)
         * Math.max(1, currentParams.lobeSoftness || 1)
@@ -516,7 +534,15 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
           depth: physical.depth,
           yaw: physical.yaw,
           pitch: physical.pitch,
+          performanceYaw: physical.performanceYaw || 0,
+          performancePitch: physical.performancePitch || 0,
+          performanceRoll: physical.performanceRoll || 0,
           scale: characterScale * (1 + amb.breath) * (1 + (d.blobScale || 0)),
+          actingScale: 1 + (d.blobScale || 0),
+          tintR: d.emotionTintR,
+          tintG: d.emotionTintG,
+          tintB: d.emotionTintB,
+          tintAmount: d.tintAmount || 0,
           scaleX: 1,
           scaleY: 1,
           rotation: physical.rotation + (d.blobSpin || 0),
@@ -596,35 +622,22 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
           mouthO: d.mouthO || 0,
           mouthD: d.mouthD || 0,
           mouthCrescent: d.mouthCrescent || 0,
+          mouthTongue: d.mouthTongue || 0,
         })
       }, LCD.DEFAULT_FACE_CALIBRATION);
 
       if (manualRecipe) applyExpressionRecipe(rig, manualRecipe);
-      if (motion && motion.mouth) {
-        rig.mouth.mouthCurve = motion.mouth.curve;
-        rig.mouth.mouthO = motion.mouth.o;
-        rig.mouth.mouthD = motion.mouth.d;
-        rig.mouth.mouthCrescent = motion.mouth.crescent;
-        rig.mouth.scaleX *= motion.mouth.scaleX;
-        rig.mouth.scaleY *= motion.mouth.scaleY;
-      }
-      if (motion && motion.eyeOpen !== null && motion.eyeOpen !== undefined) {
-        rig.leftEye.eyeOpen = motion.eyeOpen;
-        rig.rightEye.eyeOpen = motion.eyeOpen;
-      }
       applyFacePlacement(rig);
       latestRig = rig;
 
       // Facing × Performance. Eyes are the immediate copy; delayed layers lag.
       // Velocity still deforms lobes and sheds mist; it never authors heading.
-      var faceIn = {
-        yaw: previewOwns ? motion.facingYaw : emoteYaw,
-        pitch: previewOwns ? motion.facingPitch : emotePitch
-      };
+      // Delays live in vendored applyCloudFacing (core 48ms, shell 105ms, crown 145ms, mass 165ms).
+      var faceIn = { yaw: physical.yaw || 0, pitch: physical.pitch || 0 };
       var perfIn = {
-        yaw: motion ? motion.performanceYaw : 0,
-        pitch: motion ? motion.performancePitch : 0,
-        roll: motion ? motion.performanceRoll : 0
+        yaw: physical.performanceYaw || 0,
+        pitch: physical.performancePitch || 0,
+        roll: physical.performanceRoll || 0
       };
       LCD.applyCloudFacing(facing, faceIn, perfIn, step);
       canvas.dataset.finalYaw = (facing.facingYaw || 0).toFixed(3);
@@ -632,8 +645,13 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       canvas.dataset.performanceYaw = (facing.performanceYaw || 0).toFixed(3);
       canvas.dataset.performancePitch = (facing.performancePitch || 0).toFixed(3);
       canvas.dataset.performanceRoll = (facing.performanceRoll || 0).toFixed(3);
-      canvas.dataset.facingOwner = previewOwns ? "MOTION_PREVIEW" : "ACTED_RIG";
-      canvas.dataset.motionId = motion && motion.id ? motion.id : "";
+      canvas.dataset.coreYaw = (facing.coreFacingYaw || 0).toFixed(3);
+      canvas.dataset.shellYaw = (facing.shellFacingYaw || 0).toFixed(3);
+      canvas.dataset.crownYaw = (facing.crownFacingYaw || 0).toFixed(3);
+      canvas.dataset.massYaw = (facing.massFacingYaw || 0).toFixed(3);
+      canvas.dataset.facingOwner = "ACTED_RIG";
+      canvas.dataset.motionId = (d && controller.mindTelemetry) ? (controller.mindTelemetry().storyId || "") : "";
+      canvas.dataset.mouthTongue = String(rig.mouth.mouthTongue || 0);
 
       var pressVal = clamp(rig.body.contactPressure || 0, 0, 1);
       var grabPress = clamp(rig.body.grabPressure !== undefined ? rig.body.grabPressure : (dragPose.grabPressure || 0), -0.2, 1.45);
@@ -647,12 +665,37 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       var scaleX = rig.blob.scaleX;
       var scaleY = rig.blob.scaleY;
 
+      var actingWeight = 1 - clamp(Math.max(grabPress, pressVal) * 4, 0, 1);
+      var actedVolume = (rig.blob.actingScale || 1) - 1;
+      var actedScaleX = 1 + (clamp(rig.body.scaleX || 1, 0.72, 1.55) - 1) * actingWeight;
+      var actedScaleY = 1 + (clamp(rig.body.scaleY || 1, 0.70, 1.60) - 1) * actingWeight;
+      var actedPuff = Math.max(0, actedVolume) * actingWeight;
+      var silhouetteX = scaleX;
+      var silhouetteY = scaleY;
+      if (grabPress > 0.08 || pressVal > 0.08) {
+        silhouetteX = clamp(1 + (scaleX - 1) * 0.38, 0.78, 1.22);
+        silhouetteY = clamp(1 + (scaleY - 1) * 0.38, 0.78, 1.22);
+      } else {
+        if (rig.blob.scale > 1.08) {
+          silhouetteX = Math.max(scaleX, 1);
+          silhouetteY = Math.max(scaleY, 1);
+        } else if (rig.blob.scale < 0.88) {
+          silhouetteX = Math.min(scaleX, 1);
+          silhouetteY = Math.min(scaleY, 1);
+        }
+        silhouetteX = clamp(silhouetteX, 0.55, 1.5);
+        silhouetteY = clamp(silhouetteY, 0.55, 1.5);
+      }
       var cloudDeformParams = Object.assign({}, LCD.DEFAULT_DEFORMATION, currentParams, facing, {
-        scale: rig.blob.scale * depthScale * (currentParams.scale || 1),
-        scaleX: clamp(1 + (scaleX - 1) * 0.38, 0.78, 1.22),
-        scaleY: clamp(1 + (scaleY - 1) * 0.38, 0.78, 1.22),
-        squash: clamp((currentParams.squash || 0) + (performanceBody.squash || 0) + Math.max(0, 1 - rig.body.scaleY) * (1 - pressVal) * 0.8, 0, 0.65),
-        stretch: clamp((currentParams.stretch || 0) + (performanceBody.stretch || 0) + Math.max(0, rig.body.scaleY - 1) * (1 - pressVal) * 0.8, 0, 0.55),
+        scale: clamp(rig.blob.scale * depthScale * (currentParams.scale || 1), 0.5, 1.42),
+        scaleX: silhouetteX,
+        scaleY: silhouetteY,
+        actingScaleX: actedScaleX,
+        actingScaleY: actedScaleY,
+        actingPuff: actedPuff,
+        puff: clamp((currentParams.puff || 0) + Math.max(-0.35, actedVolume) * 1.35 * (grabPress > 0.08 ? 0 : 1 - pressVal), -0.25, 0.95),
+        squash: clamp((currentParams.squash || 0) + (performanceBody.squash || 0), 0, 0.65),
+        stretch: clamp((currentParams.stretch || 0) + (performanceBody.stretch || 0), 0, 0.55),
         lean: (currentParams.lean || 0) + (performanceBody.lean || 0) + clamp(rig.body.skewX * 0.6, -8, 8),
         contactPressure: pressVal,
         contactX: cnx,
@@ -661,11 +704,27 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
         faceShiftX: faceShiftX,
         faceShiftY: faceShiftY,
         contactDistance: contactDistance,
-        gazeX: clamp(rig.leftEye.x / 9 + (motion ? motion.gazeX || 0 : 0), -1, 1),
-        gazeY: clamp(rig.leftEye.y / 7 + (motion ? motion.gazeY || 0 : 0), -1, 1),
+        contactRelX: dragPose.contactRelX || 0,
+        contactRelY: dragPose.contactRelY || 0,
+        influenceRadius: dragPose.influenceRadius || 58,
+        gripPullX: dragPose.gripPullX || 0,
+        gripPullY: dragPose.gripPullY || 0,
+        velocityX: dragPose.velocityX || 0,
+        velocityY: dragPose.velocityY || 0,
+        accelX: dragPose.accelX || 0,
+        accelY: dragPose.accelY || 0,
+        cornerBlend: dragPose.cornerBlend || 0,
+        dragFaceYaw: dragPose.faceYaw || 0,
+        dragFacePitch: dragPose.facePitch || 0,
+        flickStretch: dragPose.flickStretch || 0,
+        gazeX: clamp(rig.leftEye.x / 9, -1, 1),
+        gazeY: clamp(rig.leftEye.y / 7, -1, 1),
         x: rig.blob.x,
         y: rig.blob.y,
       });
+      canvas.dataset.actingScaleX = actedScaleX.toFixed(3);
+      canvas.dataset.actingScaleY = actedScaleY.toFixed(3);
+      canvas.dataset.actingPuff = actedPuff.toFixed(3);
 
       if (acceleration > 450) {
         var anticipationSquash = clamp((acceleration - 450) / 5500, 0, 0.08);
@@ -711,11 +770,24 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
       }
 
       LCD.stepLobePhysics(lobeStates, cloudDeformParams, motionConfig, vx / Math.max(0.01, cloudDeformParams.scale || 1), vy / Math.max(0.01, cloudDeformParams.scale || 1), initialConfig.reducedMotion ? 0 : idleTime, step);
+      var renderPalette = currentPalette;
+      if ((rig.blob.tintAmount || 0) > 0.01 && LCD.mixHexColor) {
+        var tr = rig.blob.tintR != null ? rig.blob.tintR : 255;
+        var tg = rig.blob.tintG != null ? rig.blob.tintG : 180;
+        var tb = rig.blob.tintB != null ? rig.blob.tintB : 190;
+        var tint = rig.blob.tintAmount;
+        renderPalette = Object.assign({}, currentPalette, {
+          body: LCD.mixHexColor(currentPalette.body, tr, tg, tb, tint),
+          edge: LCD.mixHexColor(currentPalette.edge, tr, tg, tb, tint * 0.7),
+          coreTint: LCD.mixHexColor(currentPalette.coreTint, tr, tg, tb, tint * 0.55),
+          innerGlow: LCD.mixHexColor(currentPalette.innerGlow, tr, tg, tb, tint * 0.4),
+        });
+      }
       LCD.renderCloudBlob(ctx, {
         size: size,
         renderScale: 1,
         lobeStates: lobeStates,
-        colour: currentPalette,
+        colour: renderPalette,
         wisps: wisps,
         showFace: true,
         rig: rig,
@@ -737,6 +809,7 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
         lastTelemetryAt = now;
         var playback = performanceRunner.getPlaybackState();
         var mindTel = controller.mindTelemetry ? controller.mindTelemetry() : null;
+        var truth = controller.poseTruthSnapshot ? controller.poseTruthSnapshot() : null;
         postTelemetry({
           fps: Math.round(1000 / Math.max(1, dtMs)),
           frameTimeMs: Math.round(dtMs * 10) / 10,
@@ -748,8 +821,8 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
           expressionRecipeId: manualRecipe ? manualRecipe.id : null,
           yaw: Math.round((rig.blob.yaw || 0) * 10) / 10,
           pitch: Math.round((rig.blob.pitch || 0) * 10) / 10,
-          facingOwner: previewOwns ? "MOTION_PREVIEW" : "ACTED_RIG",
-          motionId: motion && motion.id ? motion.id : null,
+          facingOwner: "ACTED_RIG",
+          motionId: null,
           performanceYaw: Math.round((facing.performanceYaw || 0) * 10) / 10,
           performancePitch: Math.round((facing.performancePitch || 0) * 10) / 10,
           performanceRoll: Math.round((facing.performanceRoll || 0) * 10) / 10,
@@ -763,7 +836,30 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
           wallPressure: Math.round(pressVal * 100) / 100,
           wispCount: activeWisps,
           active: initialConfig.active !== false,
-          lcdprotoSha: initialConfig.lcdprotoSourceSha || "a9ce979b5a60c2b3b8301ff7fe40b46106b6ce0a",
+          lcdprotoSha: initialConfig.lcdprotoSourceSha || "7d26f8ba6b8709d38b071115a025ba0dfeaefbee",
+          autoMind: autoMind,
+          storyId: mindTel ? mindTel.storyId : null,
+          phase: mindTel ? mindTel.phase : null,
+          mood: mindTel ? mindTel.mood : null,
+          cycle: mindTel ? mindTel.actingCycle : null,
+          intensity: mindTel ? mindTel.actingIntensity : null,
+          primitive: truth ? truth.primitiveId : null,
+          cue: truth && truth.cue ? truth.cue.phase : null,
+          actingAmount: truth ? truth.primitiveAmount : 0,
+          mouthTongue: rig.mouth.mouthTongue || 0,
+          mouthAction: truth && truth.cue ? (truth.cue.primitive || truth.cue.phase) : null,
+          actingScaleX: Number(canvas.dataset.actingScaleX || 1),
+          actingScaleY: Number(canvas.dataset.actingScaleY || 1),
+          actingPuff: Number(canvas.dataset.actingPuff || 0),
+          bodyScaleX: rig.body.scaleX,
+          bodyScaleY: rig.body.scaleY,
+          facingYaw: facing.facingYaw || 0,
+          facingPitch: facing.facingPitch || 0,
+          coreYaw: facing.coreFacingYaw || 0,
+          shellYaw: facing.shellFacingYaw || 0,
+          crownYaw: facing.crownFacingYaw || 0,
+          massYaw: facing.massFacingYaw || 0,
+          recentStories: mindTel ? mindTel.recentStories : [],
           mind: mindTel
         });
       }
@@ -833,9 +929,23 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
         if (frame === null) frame = requestAnimationFrame(tick);
       } else if (command.type === "clearTrails") {
         clearWisps();
-      } else if (command.type === "triggerMotion") {
-        if (motionPlayer && command.id) motionPlayer.play(command.id);
-        lastTriggerId = command.id;
+      } else if (command.type === "triggerMotion" || command.type === "playSignature" || command.type === "playStory") {
+        playDeveloperAction(command.id);
+      } else if (command.type === "setAutoMind") {
+        autoMind = command.enabled !== false;
+      } else if (command.type === "setMood") {
+        if (controller.forceMindMood && command.id) controller.forceMindMood(command.id);
+      } else if (command.type === "setActingCycle") {
+        if (controller.setActingCycle && command.id) controller.setActingCycle(command.id);
+      } else if (command.type === "setActingIntensity") {
+        if (controller.setActingIntensity && command.id) controller.setActingIntensity(command.id);
+      } else if (command.type === "nextThought") {
+        if (controller.thinkNow) controller.thinkNow();
+      } else if (command.type === "playShowcase") {
+        playDeveloperAction("DEMO_60S_ADORABILITY");
+      } else if (command.type === "resetMind") {
+        if (controller.reset) controller.reset();
+        lastTriggerId = "RESET_MIND";
       } else if (command.type === "triggerBehaviour") {
         triggerBehaviour(command.id);
       } else if (command.type === "triggerPerformance") {
@@ -863,7 +973,7 @@ export function buildCloudHtml(initialConfig: CloudRuntimeConfig): string {
           drag.end();
           return;
         }
-        if (data.type && (data.type === "play" || data.type === "pause" || data.type === "reset" || data.type === "center" || data.type === "clearTrails" || data.type === "triggerBehaviour" || data.type === "triggerMotion" || data.type === "triggerPerformance" || data.type === "applyExpressionRecipe" || data.type === "clearExpressionRecipe")) {
+        if (data.type && (data.type === "play" || data.type === "pause" || data.type === "reset" || data.type === "center" || data.type === "clearTrails" || data.type === "triggerBehaviour" || data.type === "triggerMotion" || data.type === "triggerPerformance" || data.type === "applyExpressionRecipe" || data.type === "clearExpressionRecipe" || data.type === "setAutoMind" || data.type === "setMood" || data.type === "setActingCycle" || data.type === "setActingIntensity" || data.type === "nextThought" || data.type === "playShowcase" || data.type === "playStory" || data.type === "playSignature" || data.type === "resetMind")) {
           window.handleDevLabCommand(data);
           return;
         }

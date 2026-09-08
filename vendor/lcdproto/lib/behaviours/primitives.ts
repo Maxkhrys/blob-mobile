@@ -87,6 +87,9 @@ export const PRIMITIVES: Record<PrimitiveId, PrimitiveMeta> = {
   STRETCH_UP: { id: "STRETCH_UP", durationMs: 1100, note: "Rises tall and comes back." },
   SQUISH: { id: "SQUISH", durationMs: 850, note: "Compresses down and wide." },
   PULSE: { id: "PULSE", durationMs: 1200, note: "Three soft volume pulses." },
+  INFLATE: { id: "INFLATE", durationMs: 2400, note: "Giant proud puff that holds, then releases." },
+  FLATTEN: { id: "FLATTEN", durationMs: 2400, note: "Pancake squash that holds a readable silhouette." },
+  GIGGLE: { id: "GIGGLE", durationMs: 1100, note: "Four small laugh-squishes that settle." },
 };
 
 /**
@@ -124,17 +127,17 @@ export function samplePrimitive(
       // Anticipation crouch, then the launch, then an absorbing landing.
       if (p < 0.2) {
         const k = smooth(p / 0.2);
-        out.y = 5 * k * a;
-        out.scaleY = -0.075 * k * a;
+        out.y = 8 * k * a;
+        out.scaleY = -0.12 * k * a;
       } else if (p < 0.6) {
         const k = smooth((p - 0.2) / 0.4);
-        out.y = (5 - 22 * k) * a;
-        out.scaleY = (-0.075 + 0.135 * k) * a;
+        out.y = (8 - 36 * k) * a;
+        out.scaleY = (-0.12 + 0.22 * k) * a;
       } else {
         const k = smooth((p - 0.6) / 0.4);
-        out.y = (-17 + 17 * k) * a + 4 * arc((p - 0.6) / 0.4) * a;
-        out.scaleY = (0.06 - 0.13 * k) * a;
-        out.massY = 2.4 * arc((p - 0.6) / 0.4) * a;
+        out.y = (-28 + 28 * k) * a + 6 * arc((p - 0.6) / 0.4) * a;
+        out.scaleY = (0.1 - 0.2 * k) * a;
+        out.massY = 3.6 * arc((p - 0.6) / 0.4) * a;
       }
       break;
     }
@@ -170,18 +173,20 @@ export function samplePrimitive(
       break;
     }
     case "SHRINK": {
-      const hold = plateau(p, 0.2, 0.68);
-      out.scale = -0.085 * hold * a;
-      out.y = 4 * hold * a;
-      out.massY = 2.6 * hold * a;
-      out.massScaleY = -0.045 * hold * a;
+      const hold = plateau(p, 0.16, 0.72);
+      out.scale = -0.38 * hold * a;
+      out.y = 8 * hold * a;
+      out.massY = 4.2 * hold * a;
+      out.massScaleY = -0.16 * hold * a;
+      out.scaleY = -0.08 * hold * a;
       break;
     }
     case "PUFF": {
-      const hold = plateau(p, 0.16, 0.66);
-      out.scale = 0.075 * hold * a;
-      out.y = -2.6 * hold * a;
-      out.massScaleY = 0.05 * hold * a;
+      const hold = plateau(p, 0.14, 0.7);
+      out.scale = 0.2 * hold * a;
+      out.y = -5.2 * hold * a;
+      out.massScaleY = 0.1 * hold * a;
+      out.scaleY = 0.06 * hold * a;
       break;
     }
     case "WOBBLE": {
@@ -310,19 +315,20 @@ export function samplePrimitive(
       break;
     }
     case "STRETCH_UP": {
-      const hold = plateau(p, 0.22, 0.66);
-      out.y = -6.5 * hold * a;
-      out.scaleY = 0.085 * hold * a;
-      out.massY = -2.4 * hold * a;
-      out.massScaleY = 0.04 * hold * a;
+      const hold = plateau(p, 0.18, 0.72);
+      out.y = -14 * hold * a;
+      out.scaleY = 0.24 * hold * a;
+      out.massY = -4.8 * hold * a;
+      out.massScaleY = 0.12 * hold * a;
+      out.scale = 0.04 * hold * a;
       break;
     }
     case "SQUISH": {
-      const hold = plateau(p, 0.16, 0.6);
-      out.y = 5.5 * hold * a;
-      out.scaleY = -0.095 * hold * a;
-      out.massY = 3.2 * hold * a;
-      out.massScaleY = -0.06 * hold * a;
+      const hold = plateau(p, 0.14, 0.64);
+      out.y = 10 * hold * a;
+      out.scaleY = -0.2 * hold * a;
+      out.massY = 5.2 * hold * a;
+      out.massScaleY = -0.12 * hold * a;
       break;
     }
     case "PULSE": {
@@ -330,6 +336,31 @@ export function samplePrimitive(
       out.scaleY = 0.038 * s * a;
       out.scale = 0.022 * s * a;
       out.massScaleY = 0.028 * s * a;
+      break;
+    }
+    case "INFLATE": {
+      const hold = plateau(p, 0.14, 0.78);
+      out.scale = 0.38 * hold * a;
+      out.y = -10 * hold * a;
+      out.massScaleY = 0.16 * hold * a;
+      out.scaleY = 0.1 * hold * a;
+      break;
+    }
+    case "FLATTEN": {
+      const hold = plateau(p, 0.12, 0.76);
+      out.y = 18 * hold * a;
+      out.scaleY = -0.42 * hold * a;
+      out.massY = 8 * hold * a;
+      out.massScaleY = -0.24 * hold * a;
+      out.scale = -0.08 * hold * a;
+      break;
+    }
+    case "GIGGLE": {
+      const s = Math.sin(p * Math.PI * 8) * (1 - p * 0.45);
+      out.scaleY = -0.14 * Math.abs(s) * a;
+      out.y = 6.4 * Math.abs(s) * a;
+      out.massScaleY = -0.08 * Math.abs(s) * a;
+      out.scale = 0.05 * Math.abs(s) * a;
       break;
     }
     default:
