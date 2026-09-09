@@ -1,36 +1,29 @@
-# Deliberately excluded from the 7d26f8b vendor snapshot
+# Deliberate exclusions from LCDPROTO 7d26f8b
 
-Source: Maxkhrys/LCDPROTO `feat/grok-terra-orientation-synthesis-v1` @ `7d26f8ba6b8709d38b071115a025ba0dfeaefbee`.
+Source: `Maxkhrys/LCDPROTO` `feat/grok-terra-orientation-synthesis-v1` at `7d26f8ba6b8709d38b071115a025ba0dfeaefbee`.
 
-Every file listed in `manifest.json` is copied from that one SHA. Character runtime (Mind, behaviours, mouths, primitives, orientation, physics, drag, cloud lobe/render) is not mixed with the previous `a9ce979` snapshot.
+Every path in `manifest.json` is byte-for-byte sourced from that commit. The following upstream areas are intentionally not vendored:
 
-## Excluded source files
-
-| Path | Why |
+| Path | Reason |
 | :--- | :--- |
-| `components/playground/**` | Studio UI. Not required to execute CherriMind. |
-| `components/device/**` | Next.js device chrome / lab panels. |
-| `components/screens/**` | System screen React layer. Mobile has its own navigation. |
-| `components/states/*` except `EnvironmentLayer.tsx` | Product-state React views. Mobile host already drives BehaviourController directly. |
-| `components/blob/BlobCharacter.tsx` | Classic blob renderer. Mobile uses the cloud canvas renderer. |
-| `components/blob/CloudCharacter.tsx` | React host. Pose mapping is mirrored in `cloudCanvasRuntime.ts`; the component itself is not executed. |
-| `components/blob/downscale.ts` | Preview downscale helper, not character decisions. |
-| `components/experimental/cloud-blob/CloudBlobTest.tsx` | Lab page. |
-| `components/experimental/cloud-blob/CloudBlobControls.tsx` | Lab controls. |
-| `components/experimental/cloud-blob/CloudBlobBody.tsx` | Lab body wrapper. |
-| `components/experimental/cloud-blob/cloudLab.css` | Lab stylesheet. |
-| `lib/uiThemes.ts` | Studio theme tokens. |
-| `lib/deviceConfig.ts` | Simulator device chrome config. |
-| `lib/screenLifecycle.ts` | System-screen lifecycle, not the character brain. |
-| `lib/expressions/expressionBlend.ts` | Expression Maker blending. Mobile Expression Maker still uses vendored `coreExpressions` + `types`. |
-| `lib/expressions/customStorage.ts` | Browser localStorage. Not available, and not a character decision. |
+| `components/playground/**` | Desktop Studio UI; the phone has a mobile-first Cherri Lab. |
+| `components/device/**` | Next.js device chrome and desktop lab panels. |
+| `components/screens/**` | Product-state React layer; mobile owns navigation and product screens. |
+| `components/states/*` except `EnvironmentLayer.tsx` | React state views. `HomeState.tsx` remains the read-only formula reference and is stage-tested, not executed in React Native. |
+| `components/blob/BlobCharacter.tsx` | Classic blob renderer; mobile uses the cloud renderer. |
+| `components/blob/CloudCharacter.tsx` | Browser React/canvas host. Its platform-neutral frame formulas live in `cherriFrameCore.js` and are asserted against the pinned source. |
+| `components/blob/downscale.ts` | Browser preview downscale helper. |
+| `components/experimental/cloud-blob/CloudBlobTest.tsx` | Browser-only lab page. |
+| `components/experimental/cloud-blob/CloudBlobControls.tsx` | Browser-only lab controls. |
+| `components/experimental/cloud-blob/CloudBlobBody.tsx` | Browser-only body wrapper. |
+| `components/experimental/cloud-blob/cloudLab.css` | Browser-only lab stylesheet. |
+| `lib/uiThemes.ts` | Desktop Studio theme tokens. |
+| `lib/deviceConfig.ts` | Browser simulator chrome configuration. |
+| `lib/screenLifecycle.ts` | Browser screen lifecycle, not a character decision. |
+| `lib/expressions/expressionBlend.ts` | Browser Expression Maker interpolation. Mobile developer face overrides layer onto the canonical pose without replacing its controller. |
+| `lib/expressions/customStorage.ts` | Browser `localStorage`. |
 | `lib/expressions/index.ts` | Re-export only. |
-| `lib/performances/index.ts` | Re-export only. `performanceRunner.ts` is vendored and loaded directly. |
-| `lib/motionPreview.ts` | Did not exist in LCDPROTO. Removed from mobile. It was an approximate sequencer. |
+| `lib/performances/index.ts` | Re-export only. The legacy runner sources are retained for provenance but are not executed by mobile. |
+| `lib/motionPreview.ts` | Does not exist upstream. The former mobile approximation was removed. |
 
-## Mobile adapter notes
-
-- `src/components/character/cloudCanvasRuntime.ts` is a platform host. It instantiates the vendored `BehaviourController`, feeds touch through `InteractionSensor` / `BlobDragController`, and translates the canonical pose into the existing canvas renderer.
-- Facing follow-through delays are the source constants in `lib/mind/cloudFacing.ts`: eyes immediate, core 0.048s, shell 0.105s, crown 0.145s, mass 0.165s.
-- Renderer safety clamps match web `CloudCharacter` / `HomeState` (body scale 0.72–1.55 / 0.70–1.60, jelly deform ±0.10, body deform ±0.34, grab smear 0.38 only while grabbed or on a wall). They are not a second behaviour system.
-- `DEMO_60S_ADORABILITY` is authored inside `CherriMind` (`lib/mind/director.ts`), not the story catalogue map. Mobile plays it through `BehaviourController.playStory` / `playAdorabilityDemo`.
+The mobile-specific boundary is limited to `cloudCanvasRuntime.ts` (WebView lifecycle/input/render host), `cherriFrameCore.js` (formula-for-formula pure adapter), and React Native UI/bridge code.

@@ -1,21 +1,31 @@
-import subprocess,pathlib,re,json,hashlib
-root=pathlib.Path(__file__).resolve().parents[1]
-repo=root.parent/'LCDPROTO'; sha='a46067f44703f32b2f22e6e618b0eb54f71b147e'
-queue=['components/states/EnvironmentLayer.tsx','lib/environmentConfig.ts','components/experimental/cloud-blob/cloudRenderer.ts','components/experimental/cloud-blob/cloudLobeSystem.ts','components/experimental/cloud-blob/cloudPerformance.ts','lib/expressionCatalog.ts','lib/blobDrag.ts','lib/blobPhysics.ts','lib/expressions/coreExpressions.ts','lib/expressions/types.ts','lib/performances/corePerformances.ts','lib/performances/performanceRunner.ts','lib/stateEmotionMap.ts','lib/cloudPresets.ts','lib/deviceStates.ts']
-seen={}
-while queue:
- p=queue.pop()
- if p in seen: continue
- raw=subprocess.check_output(['git','-C',str(repo),'show',sha+':'+p]); seen[p]=hashlib.sha256(raw).hexdigest()
- dest=root/'vendor/lcdproto'/p;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(raw)
- for imp in re.findall(r'from\s+[\"\']([^\"\']+)',raw.decode()):
-  if imp.startswith('@/'): q=imp[2:]
-  elif imp.startswith('.'): q=str(pathlib.PurePosixPath(p).parent/imp)
-  else: continue
-  import posixpath
-  q=posixpath.normpath(q)
-  if not q.endswith(('.ts','.tsx')): q+='.ts'
-  if subprocess.run(['git','-C',str(repo),'cat-file','-e',sha+':'+q],stderr=subprocess.DEVNULL).returncode: q=q[:-3]+'/index.ts'
-  queue.append(q)
-(root/'vendor/lcdproto/manifest.json').write_text(json.dumps({'repository':'Maxkhrys/LCDPROTO','branch':'feat/cloud-physics-disney-defaults','sha':sha,'files':seen},indent=2)+'\n')
-print('Vendored',len(seen),'unchanged source files')
+"""Refresh the existing LCDPROTO vendor manifest from its immutable source SHA."""
+
+import hashlib
+import json
+import pathlib
+import subprocess
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO = ROOT.parent / "LCDPROTO"
+MANIFEST_PATH = ROOT / "vendor" / "lcdproto" / "manifest.json"
+SHA = "7d26f8ba6b8709d38b071115a025ba0dfeaefbee"
+BRANCH = "feat/grok-terra-orientation-synthesis-v1"
+
+manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+if manifest.get("sha") != SHA or manifest.get("branch") != BRANCH:
+    raise SystemExit("Refusing to sync: manifest is not pinned to the approved LCDPROTO source")
+
+files = {}
+for relative in sorted(manifest["files"]):
+    raw = subprocess.check_output(["git", "-C", str(REPO), "show", f"{SHA}:{relative}"])
+    destination = ROOT / "vendor" / "lcdproto" / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(raw)
+    files[relative] = hashlib.sha256(raw).hexdigest()
+
+manifest["repository"] = "Maxkhrys/LCDPROTO"
+manifest["branch"] = BRANCH
+manifest["sha"] = SHA
+manifest["files"] = files
+MANIFEST_PATH.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+print(f"Vendored {len(files)} source files from {BRANCH} @ {SHA}")

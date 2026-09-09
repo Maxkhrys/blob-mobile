@@ -511,10 +511,10 @@ export default function SettingsScreen() {
           <View style={{ gap: 2, flex: 1, paddingRight: 10 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
               <Ionicons name="terminal" size={16} color="#388BFF" />
-              <Text style={styles.devCardTitle}>LCDPROTO Dev Lab</Text>
+              <Text style={styles.devCardTitle}>Cherri Lab</Text>
             </View>
             <Text style={styles.devCardSubtitle}>
-              Live Cloud, physics, 3D turn, performances and real-time telemetry
+              Mind, emotes, touch physics, orientation and parity telemetry
             </Text>
           </View>
           <Pressable
@@ -522,7 +522,7 @@ export default function SettingsScreen() {
             accessibilityLabel="Open Dev Lab"
             onPress={() => {
               feedback("click");
-              router.push("/dev-lab");
+              router.push("/motion-preview");
             }}
             style={styles.devLabCta}
           >
@@ -530,18 +530,6 @@ export default function SettingsScreen() {
             <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
           </Pressable>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open Character Motion Preview"
-          onPress={() => {
-            feedback("click");
-            router.push("/motion-preview");
-          }}
-          style={{ paddingTop: 10 }}
-        >
-          <Text style={styles.devCardSubtitle}>Character Motion Preview · experimental</Text>
-        </Pressable>
-
         {/* Collapsible advanced options */}
         <Pressable
           onPress={() => setDeveloper(!developer)}

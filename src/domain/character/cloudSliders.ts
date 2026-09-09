@@ -73,19 +73,14 @@ export interface CloudSettingsValues {
 }
 
 export function getDefaultCloudSettings(): CloudSettingsValues {
-  const settings: CloudSettingsValues = {
+  // Match LCDPROTO DEFAULT_CLOUD_SETTINGS: empty override buckets let the
+  // vendored renderer own its canonical defaults. Slider fallback values are
+  // display affordances, not a pose that should be applied on app startup.
+  return {
     params: {},
     motion: {},
     trails: {},
     colour: {},
     face: { offsetX: 0, offsetY: 0, scale: 1 },
   };
-  for (const s of CLOUD_SLIDERS) {
-    if (s.group === "face") {
-      (settings.face as any)[s.key] = s.fallback;
-    } else {
-      settings[s.group][s.key] = s.fallback;
-    }
-  }
-  return settings;
 }

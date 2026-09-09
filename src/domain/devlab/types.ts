@@ -102,6 +102,7 @@ export type DevLabRuntimeCommand =
   | { type: "triggerBehaviour"; id: string }
   | { type: "triggerMotion"; id: string }
   | { type: "triggerPerformance"; id: string }
+  | { type: "triggerPrimitive"; id: string; amount?: number; direction?: number }
   | { type: "applyExpressionRecipe"; recipe: ExpressionRecipe }
   | { type: "clearExpressionRecipe" }
   | { type: "setAutoMind"; enabled: boolean }
@@ -112,11 +113,49 @@ export type DevLabRuntimeCommand =
   | { type: "playShowcase" }
   | { type: "playStory"; id: string }
   | { type: "playSignature"; id: string }
-  | { type: "resetMind" };
+  | { type: "resetMind" }
+  | { type: "setParityTrace"; enabled: boolean }
+  | { type: "setOrientation"; yaw: number; pitch: number }
+  | {
+      type: "runTouchTest";
+      id: "tap" | "hold" | "drag" | "flick" | "wall";
+    }
+  | {
+      type: "setFaceOverride";
+      values: Partial<{
+        eyeX: number;
+        eyeY: number;
+        eyeLid: number;
+        leftEyeScaleX: number;
+        leftEyeScaleY: number;
+        rightEyeScaleX: number;
+        rightEyeScaleY: number;
+        leftEyeRotation: number;
+        rightEyeRotation: number;
+        leftLidBias: number;
+        rightLidBias: number;
+        pupilScale: number;
+        leftPupilX: number;
+        leftPupilY: number;
+        rightPupilX: number;
+        rightPupilY: number;
+        mouthCurve: number;
+        mouthO: number;
+        mouthD: number;
+        mouthCrescent: number;
+        mouthTongue: number;
+        mouthScaleX: number;
+        mouthScaleY: number;
+        mouthX: number;
+        mouthY: number;
+      }>;
+    }
+  | { type: "clearFaceOverride" };
 
 export interface DevLabTelemetry {
   fps: number;
   frameTimeMs: number;
+  renderTimeMs?: number;
   state: string;
   behaviourId: string | null;
   performanceId: string | null;
@@ -131,9 +170,32 @@ export interface DevLabTelemetry {
   velocityY: number;
   speed: number;
   dragging: boolean;
+  touching?: boolean;
+  touchMoved?: boolean;
+  grabPressure?: number;
   wallPressure: number;
+  contactX?: number;
+  contactY?: number;
+  contactDistance?: number;
+  contactRelX?: number;
+  contactRelY?: number;
+  influenceRadius?: number;
+  gripPullX?: number;
+  gripPullY?: number;
+  accelX?: number;
+  accelY?: number;
+  cornerBlend?: number;
+  flickStretch?: number;
+  faceShiftX?: number;
+  faceShiftY?: number;
+  dragFaceYaw?: number;
+  dragFacePitch?: number;
   wispCount: number;
+  lobeDeformationMagnitude?: number;
+  faceVisibility?: number;
   active: boolean;
+  reducedMotion?: boolean;
+  parityTrace?: boolean;
   lcdprotoSha: string;
   autoMind?: boolean;
   storyId?: string | null;
@@ -144,6 +206,7 @@ export interface DevLabTelemetry {
   primitive?: string | null;
   cue?: string | null;
   actingAmount?: number;
+  blobScale?: number;
   mouthTongue?: number;
   mouthAction?: string | null;
   actingScaleX?: number;
@@ -157,10 +220,22 @@ export interface DevLabTelemetry {
   performancePitch?: number;
   performanceRoll?: number;
   coreYaw?: number;
+  corePitch?: number;
   shellYaw?: number;
+  shellPitch?: number;
   crownYaw?: number;
+  crownPitch?: number;
   massYaw?: number;
+  massPitch?: number;
   recentStories?: string[];
+  mind?: Record<string, unknown> | null;
+  stages?: {
+    controller: Record<string, unknown>;
+    jellyTarget: Record<string, unknown>;
+    physics: Record<string, unknown>;
+    rig: Record<string, unknown>;
+    cloud: Record<string, unknown>;
+  } | null;
 }
 
 export interface DevPreset {

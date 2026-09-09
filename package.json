@@ -51,7 +51,8 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "build:runtime": "node scripts/build-runtime.cjs",
-    "check:parity": "node scripts/check-cherri-parity.cjs"
+    "check:parity": "node scripts/check-cherri-parity.cjs",
+    "check:stage-parity": "node scripts/check-stage-parity.cjs"
   },
   "private": true
 }

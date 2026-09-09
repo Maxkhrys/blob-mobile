@@ -8,7 +8,7 @@ const vm = require("vm");
 const assert = require("assert");
 const ts = require("typescript");
 
-const WEB = process.env.LCDPROTO_ROOT || "/workspace/LCDPROTO";
+const WEB = process.env.LCDPROTO_ROOT || path.resolve(__dirname, "../../LCDPROTO");
 const MOBILE = path.resolve(__dirname, "../vendor/lcdproto");
 const EXPECTED_SHA = "7d26f8ba6b8709d38b071115a025ba0dfeaefbee";
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(MOBILE, "manifest.json"), "utf8"));

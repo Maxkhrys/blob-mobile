@@ -28,17 +28,6 @@ import {
 } from "../../domain/devlab/types";
 import { useReducedMotion } from "../ui/Kit";
 
-const CORE_PERFORMANCE_IDS = new Set([
-  "JOY_HOP",
-  "LAUGH_SQUISH",
-  "EXCITED_WIGGLE",
-  "CURIOUS_DOUBLE_TAKE",
-  "ANGRY_FLARE",
-  "SURPRISE_POP",
-  "SLEEPY_YAWN",
-  "SAD_SETTLE",
-]);
-
 export interface CloudPreviewProps {
   colourId?: CloudColourId;
   palette?: CloudColourConfig;
@@ -59,6 +48,8 @@ export interface CloudPreviewProps {
   commandToken?: number;
   expressionRecipe?: ExpressionRecipe | null;
   debugTelemetry?: boolean;
+  parityTrace?: boolean;
+  physicsDebug?: boolean;
   presentation?: "hardware" | "integrated";
   characterScale?: number;
   onDoubleTap?: () => void;
@@ -86,6 +77,8 @@ export function CloudPreview({
   commandToken = 0,
   expressionRecipe = null,
   debugTelemetry = false,
+  parityTrace = false,
+  physicsDebug = false,
   presentation = "integrated",
   characterScale = 0.68,
   onDoubleTap,
@@ -147,6 +140,8 @@ export function CloudPreview({
     reactionToken,
     expressionRecipe,
     debugTelemetry,
+    parityTrace,
+    physicsDebug,
     lcdprotoSourceSha: LCDPROTO_SOURCE_SHA,
     presentation,
     characterScale,
@@ -172,15 +167,11 @@ export function CloudPreview({
   }, []);
 
   const sendCommand = useCallback((command: DevLabRuntimeCommand) => {
-    const value: DevLabRuntimeCommand =
-      command.type === "triggerBehaviour" && CORE_PERFORMANCE_IDS.has(command.id)
-        ? { type: "triggerPerformance", id: command.id }
-        : command;
     if (Platform.OS === "web") {
-      web.current?.contentWindow?.postMessage(value, "*");
+      web.current?.contentWindow?.postMessage(command, "*");
     } else {
       native.current?.injectJavaScript(
-        `window.handleDevLabCommand && window.handleDevLabCommand(${JSON.stringify(value)});true;`,
+        `window.handleDevLabCommand && window.handleDevLabCommand(${JSON.stringify(command)});true;`,
       );
     }
   }, []);

@@ -108,7 +108,7 @@ export default function CharacterScreen() {
     handleTriggerExpression(moodBehaviours[nextIdx]?.id);
   };
 
-  // Explicit absolute animation speed configuration (prevents compounding mutation)
+  // Explicit absolute ambient-motion configuration (prevents compounding mutation).
   const cycleSpeed = () => {
     feedback("tick");
     const next =
@@ -120,9 +120,9 @@ export default function CharacterScreen() {
     setAnimationSpeed(next);
 
     const speedPresets = {
-      Gentle: { floatAmount: 2.8, driftAmount: 1.8, floatSpeed: 0.0004 },
-      Normal: { floatAmount: 4.5, driftAmount: 2.5, floatSpeed: 0.0008 },
-      Energetic: { floatAmount: 6.2, driftAmount: 3.6, floatSpeed: 0.0013 },
+      Gentle: { floatAmount: 2.8, driftAmount: 1.8 },
+      Normal: { floatAmount: 4.5, driftAmount: 2.5 },
+      Energetic: { floatAmount: 6.2, driftAmount: 3.6 },
     };
 
     updateCloudSettings({
@@ -436,98 +436,23 @@ export default function CharacterScreen() {
       {/* ------------------------------------------------------------- */}
       {currentTab === "behaviour" && (
         <View style={{ gap: 16 }}>
-          <GlassCard>
-            <Text style={styles.sectionHeader}>Liveliness & Presence</Text>
-
-            {/* Float & Bobbing */}
-            <View style={styles.behaviourRow}>
-              <Text style={styles.behaviourLabel}>Float Drift</Text>
-              <Pressable
-                onPress={() => {
-                  feedback("tick");
-                  updateCloudSettings({
-                    motion: {
-                      ...cloudSettings.motion,
-                      driftSpeed: (cloudSettings.motion?.driftSpeed ?? 0.00035) * 1.25,
-                    },
-                  });
-                }}
-                style={styles.actionChip}
-              >
-                <Text style={styles.actionChipText}>Enhance</Text>
-              </Pressable>
-            </View>
-
-            {/* Cloud Fluffiness */}
-            <View style={styles.behaviourRow}>
-              <Text style={styles.behaviourLabel}>Fluffiness</Text>
-              <Pressable
-                onPress={() => {
-                  feedback("tick");
-                  const current = cloudSettings.params?.fluffiness ?? 1.05;
-                  updateCloudSettings({
-                    params: {
-                      ...cloudSettings.params,
-                      fluffiness: current >= 1.2 ? 0.85 : current + 0.15,
-                    },
-                  });
-                }}
-                style={styles.actionChip}
-              >
-                <Text style={styles.actionChipText}>Toggle</Text>
-              </Pressable>
-            </View>
-
-            {/* Mist Trails */}
-            <View style={styles.behaviourRow}>
-              <Text style={styles.behaviourLabel}>Mist Atmosphere</Text>
-              <Pressable
-                onPress={() => {
-                  feedback("tick");
-                  const cur = cloudSettings.trails?.trailStrength ?? 0.6;
-                  updateCloudSettings({
-                    trails: {
-                      ...cloudSettings.trails,
-                      trailStrength: cur > 0.8 ? 0.3 : 0.9,
-                    },
-                  });
-                }}
-                style={styles.actionChip}
-              >
-                <Text style={styles.actionChipText}>Cycle</Text>
-              </Pressable>
-            </View>
-          </GlassCard>
-
           {/* Dev Lab Entry Button */}
           <GlassCard style={{ alignItems: "center", gap: 10 }}>
-            <Text style={styles.devNoticeTitle}>Need Advanced Tuning?</Text>
+            <Text style={styles.devNoticeTitle}>Developer Cherri Lab</Text>
             <Text style={styles.devNoticeDesc}>
-              Physics springs, 3D turn kinematics, performance clips, and raw telemetry are in Dev Lab.
+              Canonical Mind, emotes, touch physics, orientation, and parity traces stay separate from production controls.
             </Text>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Open Advanced Dev Lab"
-              onPress={() => {
-                feedback("click");
-                router.push("/dev-lab");
-              }}
-              style={styles.devLabButton}
-            >
-              <Ionicons name="terminal-outline" size={17} color="#FFFFFF" />
-              <Text style={styles.devLabButtonText}>Open Advanced Dev Lab</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Open Character Motion Preview"
+                accessibilityLabel="Open Cherri Lab"
               onPress={() => {
                 feedback("click");
                 router.push("/motion-preview");
               }}
               style={styles.devLabButton}
             >
-              <Ionicons name="body-outline" size={17} color="#FFFFFF" />
-              <Text style={styles.devLabButtonText}>Character Motion Preview</Text>
+              <Ionicons name="terminal-outline" size={17} color="#FFFFFF" />
+              <Text style={styles.devLabButtonText}>Open Cherri Lab</Text>
             </Pressable>
           </GlassCard>
         </View>

@@ -168,7 +168,7 @@ export function CharacterToolMenu({
     if (toolId === "edit") {
       setActiveSubmenu(null);
       onClose();
-      router.push("/dev-lab");
+      router.push("/motion-preview");
       return;
     }
     setActiveSubmenu((current) => (current === toolId ? null : toolId));
